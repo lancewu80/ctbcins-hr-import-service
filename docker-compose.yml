@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  hr-import-service:
+    build: .
+    container_name: hr-import-service
+    restart: unless-stopped
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:sqlserver://db-server:1433;databaseName=ecp8502;encrypt=false
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=YourPassword123
+      - SFTP_HOST=10.2.3.4
+      - SFTP_PORT=22
+      - SFTP_USERNAME=ftpuser
+      - SFTP_PASSWORD=ai3[1qaz@WSX]
+      - SFTP_PATH=/hrfile/
+      - LOCAL_DIR=/app/data
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db-server
+
+  db-server:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: mssql-server
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourPassword123
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+
+volumes:
+  mssql-data:

@@ -1,0 +1,50 @@
+hr-import-service/
+├── src/
+│   └── main/
+│       ├── java/
+│       │   └── com/
+│       │       └── citic/
+│       │           └── hrimport/
+│       │               ├── HrImportApplication.java
+│       │               ├── config/
+│       │               ├── service/
+│       │               ├── entity/
+│       │               ├── repository/
+│       │               ├── dto/
+│       │               ├── job/
+│       │               └── util/
+│       └── resources/
+│           ├── application.yml
+│           └── logback-spring.xml
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── workflows/
+│   └── deploy.yml
+├── pom.xml
+└── README.md
+
+建置專案
+bash
+mvn clean package
+Docker執行
+bash
+docker-compose up -d
+手動測試
+bash
+java -jar target/hr-import-service-1.0.0.jar
+這個完整的Spring Boot專案提供了：
+
+每日定時任務：自動從SFTP下載並處理人資CSV檔案
+
+部門處理：自動拆解多層部門結構並建立部門關係
+
+員工處理：根據部門層級決定是否更新員工部門
+
+錯誤處理：完善的日誌記錄和異常處理
+
+容器化部署：支援Docker和Docker Compose部署
+
+CI/CD流程：GitHub Actions自動化建置和部署
+
+專案已打包成ZIP檔案，您可以直接下載並使用。

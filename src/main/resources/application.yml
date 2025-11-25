@@ -1,0 +1,48 @@
+spring:
+  datasource:
+    url: jdbc:sqlserver://localhost:1433;databaseName=ecp8502;encrypt=false
+    username: ecp
+    password: csii1qaz@WSX
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.SQLServerDialect
+        format_sql: true
+        # 禁用自動引號，讓 Hibernate 使用原始表名
+        globally_quoted_identifiers: false
+        # 明確設定命名策略
+        naming-strategy: org.hibernate.cfg.EJB3NamingStrategy
+        # 禁用物理命名策略
+        physical_naming_strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+  batch:
+    jdbc:
+      initialize-schema: always
+
+app:
+  sftp:
+    host: ${SFTP_HOST:10.2.3.4}
+    port: ${SFTP_PORT:22}
+    username: ${SFTP_USERNAME:ftpuser}
+    password: ${SFTP_PASSWORD:ai3[1qaz@WSX]}
+    remote-path: ${SFTP_PATH:/hrfile/}
+    local-dir: ${LOCAL_DIR:/tmp/hr-import}
+  processing:
+    enabled-states: A
+    disabled-states: C,B,D,E
+
+logging:
+  level:
+    com.citic.hrimport: DEBUG
+  file:
+    name: logs/hr-import.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
+scheduler:
+  hrimport:
+    enabled: true         # true: 每分鐘會跑 ; false: 完全停用
+    cron: "0 * * * * *"   # 每分鐘一次
+    localPath: "C:\\project\\testdata\\citic"
