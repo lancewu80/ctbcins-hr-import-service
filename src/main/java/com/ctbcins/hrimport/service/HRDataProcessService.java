@@ -1,6 +1,6 @@
-package com.citic.hrimport.service;
+package com.ctbcins.hrimport.service;
 
-import com.citic.hrimport.dto.HRData;
+import com.ctbcins.hrimport.dto.HRData;
 import com.opencsv.bean.CsvToBean;
 import com.opencsv.bean.CsvToBeanBuilder;
 import com.opencsv.bean.HeaderColumnNameMappingStrategy;

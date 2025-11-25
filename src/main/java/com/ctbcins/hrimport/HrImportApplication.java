@@ -1,4 +1,4 @@
-package com.citic.hrimport;
+package com.ctbcins.hrimport;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

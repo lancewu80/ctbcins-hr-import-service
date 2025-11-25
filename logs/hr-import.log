@@ -1338,3 +1338,200 @@ Caused by: org.springframework.dao.EmptyResultDataAccessException: Incorrect res
 2025-11-25 16:40:00 - c.c.hrimport.job.ScheduledImportJob - No CSV files found in local path: C:\project\testdata\citic
 2025-11-25 16:41:00 - c.c.hrimport.job.ScheduledImportJob - 開始執行 HR 匯入（本機路徑） localPath=C:\project\testdata\citic
 2025-11-25 16:41:00 - c.c.hrimport.job.ScheduledImportJob - No CSV files found in local path: C:\project\testdata\citic
+2025-11-25 16:42:00 - c.c.hrimport.job.ScheduledImportJob - 開始執行 HR 匯入（本機路徑） localPath=C:\project\testdata\citic
+2025-11-25 16:42:00 - c.c.hrimport.job.ScheduledImportJob - No CSV files found in local path: C:\project\testdata\citic
+2025-11-25 16:47:03 - c.c.hrimport.HrImportApplication - Starting HrImportApplication using Java 17.0.2 on NB-B0014 with PID 16052 (C:\project\中信產\多元理賠收件平台建置案\HrImport\target\classes started by Lance.Wu in C:\project\中信產\多元理賠收件平台建置案\HrImport)
+2025-11-25 16:47:03 - c.c.hrimport.HrImportApplication - No active profile set, falling back to 1 default profile: "default"
+2025-11-25 16:47:03 - o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2025-11-25 16:47:03 - o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 19 ms. Found 0 JPA repository interfaces.
+2025-11-25 16:47:04 - o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port(s): 8080 (http)
+2025-11-25 16:47:04 - o.a.catalina.core.StandardService - Starting service [Tomcat]
+2025-11-25 16:47:04 - o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2025-11-25 16:47:04 - o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2025-11-25 16:47:04 - o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1448 ms
+2025-11-25 16:47:04 - com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2025-11-25 16:47:04 - com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2025-11-25 16:47:05 - o.h.jpa.internal.util.LogHelper - HHH000204: Processing PersistenceUnitInfo [name: default]
+2025-11-25 16:47:05 - org.hibernate.Version - HHH000412: Hibernate ORM core version 5.6.15.Final
+2025-11-25 16:47:05 - o.h.annotations.common.Version - HCANN000001: Hibernate Commons Annotations {5.1.2.Final}
+2025-11-25 16:47:05 - org.hibernate.dialect.Dialect - HHH000400: Using dialect: org.hibernate.dialect.SQLServerDialect
+2025-11-25 16:47:08 - o.h.e.t.j.p.i.JtaPlatformInitiator - HHH000490: Using JtaPlatform implementation: [org.hibernate.engine.transaction.jta.platform.internal.NoJtaPlatform]
+2025-11-25 16:47:08 - o.s.o.j.LocalContainerEntityManagerFactoryBean - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2025-11-25 16:47:08 - o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2025-11-25 16:47:08 - org.quartz.impl.StdSchedulerFactory - Using default implementation for ThreadExecutor
+2025-11-25 16:47:08 - o.quartz.core.SchedulerSignalerImpl - Initialized Scheduler Signaller of type: class org.quartz.core.SchedulerSignalerImpl
+2025-11-25 16:47:08 - org.quartz.core.QuartzScheduler - Quartz Scheduler v.2.3.2 created.
+2025-11-25 16:47:08 - org.quartz.simpl.RAMJobStore - RAMJobStore initialized.
+2025-11-25 16:47:08 - org.quartz.core.QuartzScheduler - Scheduler meta-data: Quartz Scheduler (v2.3.2) 'quartzScheduler' with instanceId 'NON_CLUSTERED'
+  Scheduler class: 'org.quartz.core.QuartzScheduler' - running locally.
+  NOT STARTED.
+  Currently in standby mode.
+  Number of jobs executed: 0
+  Using thread pool 'org.quartz.simpl.SimpleThreadPool' - with 10 threads.
+  Using job-store 'org.quartz.simpl.RAMJobStore' - which does not support persistence. and is not clustered.
+
+2025-11-25 16:47:08 - org.quartz.impl.StdSchedulerFactory - Quartz scheduler 'quartzScheduler' initialized from an externally provided properties instance.
+2025-11-25 16:47:08 - org.quartz.impl.StdSchedulerFactory - Quartz scheduler version: 2.3.2
+2025-11-25 16:47:08 - org.quartz.core.QuartzScheduler - JobFactory set to: org.springframework.scheduling.quartz.SpringBeanJobFactory@239d73ff
+2025-11-25 16:47:08 - o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port(s): 8080 (http) with context path ''
+2025-11-25 16:47:08 - o.s.s.quartz.SchedulerFactoryBean - Starting Quartz Scheduler now
+2025-11-25 16:47:08 - org.quartz.core.QuartzScheduler - Scheduler quartzScheduler_$_NON_CLUSTERED started.
+2025-11-25 16:47:08 - c.c.hrimport.HrImportApplication - Started HrImportApplication in 6.293 seconds (JVM running for 6.652)
+2025-11-25 16:48:00 - c.c.hrimport.job.ScheduledImportJob - 開始執行 HR 匯入（本機路徑） localPath=C:\project\testdata\citic
+2025-11-25 16:48:00 - c.c.hrimport.job.ScheduledImportJob - 處理本機 CSV 檔案: 1760430659478_英特內人事資料.csv
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 開始處理HR檔案: C:\project\testdata\citic\1760430659478_英特內人事資料.csv
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - CSV檔案解析完成，總記錄數: 87, 有效記錄數: 2
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 開始處理部門資料，共 2 筆記錄
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 需要處理的部門數量: 2
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 開始處理員工資料，共 2 筆記錄
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 找不到對應的部門: G10000
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 處理員工資料失敗: 胡志國 (CD007)
+org.springframework.dao.EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+	at org.springframework.dao.support.DataAccessUtils.nullableSingleResult(DataAccessUtils.java:98)
+	at org.springframework.jdbc.core.JdbcTemplate.queryForObject(JdbcTemplate.java:882)
+	at org.springframework.jdbc.core.JdbcTemplate.queryForObject(JdbcTemplate.java:908)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processSingleEmployee(HRDataProcessService.java:212)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processEmployees(HRDataProcessService.java:170)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processHRFile(HRDataProcessService.java:72)
+	at com.ctbcins.hrimport.service.HRDataProcessService$$FastClassBySpringCGLIB$$2d1c3c53.invoke(<generated>)
+	at org.springframework.cglib.proxy.MethodProxy.invoke(MethodProxy.java:218)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.invokeJoinpoint(CglibAopProxy.java:792)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:163)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:762)
+	at org.springframework.transaction.interceptor.TransactionInterceptor$1.proceedWithInvocation(TransactionInterceptor.java:123)
+	at org.springframework.transaction.interceptor.TransactionAspectSupport.invokeWithinTransaction(TransactionAspectSupport.java:388)
+	at org.springframework.transaction.interceptor.TransactionInterceptor.invoke(TransactionInterceptor.java:119)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:186)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:762)
+	at org.springframework.aop.framework.CglibAopProxy$DynamicAdvisedInterceptor.intercept(CglibAopProxy.java:707)
+	at com.ctbcins.hrimport.service.HRDataProcessService$$EnhancerBySpringCGLIB$$9b950274.processHRFile(<generated>)
+	at com.ctbcins.hrimport.job.ScheduledImportJob.runLocalImportJob(ScheduledImportJob.java:105)
+	at com.ctbcins.hrimport.job.ScheduledImportJob.minuteImportJob(ScheduledImportJob.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.scheduling.support.ScheduledMethodRunnable.run(ScheduledMethodRunnable.java:84)
+	at org.springframework.scheduling.support.DelegatingErrorHandlingRunnable.run(DelegatingErrorHandlingRunnable.java:54)
+	at org.springframework.scheduling.concurrent.ReschedulingRunnable.run(ReschedulingRunnable.java:95)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:304)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 處理員工資料失敗: 胡志國 (CD007)
+java.lang.RuntimeException: 員工處理失敗
+	at com.ctbcins.hrimport.service.HRDataProcessService.processSingleEmployee(HRDataProcessService.java:224)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processEmployees(HRDataProcessService.java:170)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processHRFile(HRDataProcessService.java:72)
+	at com.ctbcins.hrimport.service.HRDataProcessService$$FastClassBySpringCGLIB$$2d1c3c53.invoke(<generated>)
+	at org.springframework.cglib.proxy.MethodProxy.invoke(MethodProxy.java:218)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.invokeJoinpoint(CglibAopProxy.java:792)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:163)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:762)
+	at org.springframework.transaction.interceptor.TransactionInterceptor$1.proceedWithInvocation(TransactionInterceptor.java:123)
+	at org.springframework.transaction.interceptor.TransactionAspectSupport.invokeWithinTransaction(TransactionAspectSupport.java:388)
+	at org.springframework.transaction.interceptor.TransactionInterceptor.invoke(TransactionInterceptor.java:119)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:186)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:762)
+	at org.springframework.aop.framework.CglibAopProxy$DynamicAdvisedInterceptor.intercept(CglibAopProxy.java:707)
+	at com.ctbcins.hrimport.service.HRDataProcessService$$EnhancerBySpringCGLIB$$9b950274.processHRFile(<generated>)
+	at com.ctbcins.hrimport.job.ScheduledImportJob.runLocalImportJob(ScheduledImportJob.java:105)
+	at com.ctbcins.hrimport.job.ScheduledImportJob.minuteImportJob(ScheduledImportJob.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.scheduling.support.ScheduledMethodRunnable.run(ScheduledMethodRunnable.java:84)
+	at org.springframework.scheduling.support.DelegatingErrorHandlingRunnable.run(DelegatingErrorHandlingRunnable.java:54)
+	at org.springframework.scheduling.concurrent.ReschedulingRunnable.run(ReschedulingRunnable.java:95)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:304)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+Caused by: org.springframework.dao.EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+	at org.springframework.dao.support.DataAccessUtils.nullableSingleResult(DataAccessUtils.java:98)
+	at org.springframework.jdbc.core.JdbcTemplate.queryForObject(JdbcTemplate.java:882)
+	at org.springframework.jdbc.core.JdbcTemplate.queryForObject(JdbcTemplate.java:908)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processSingleEmployee(HRDataProcessService.java:212)
+	... 29 common frames omitted
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 找不到對應的部門: G10001
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 處理員工資料失敗: 許郁潔 (CD025)
+org.springframework.dao.EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+	at org.springframework.dao.support.DataAccessUtils.nullableSingleResult(DataAccessUtils.java:98)
+	at org.springframework.jdbc.core.JdbcTemplate.queryForObject(JdbcTemplate.java:882)
+	at org.springframework.jdbc.core.JdbcTemplate.queryForObject(JdbcTemplate.java:908)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processSingleEmployee(HRDataProcessService.java:212)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processEmployees(HRDataProcessService.java:170)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processHRFile(HRDataProcessService.java:72)
+	at com.ctbcins.hrimport.service.HRDataProcessService$$FastClassBySpringCGLIB$$2d1c3c53.invoke(<generated>)
+	at org.springframework.cglib.proxy.MethodProxy.invoke(MethodProxy.java:218)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.invokeJoinpoint(CglibAopProxy.java:792)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:163)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:762)
+	at org.springframework.transaction.interceptor.TransactionInterceptor$1.proceedWithInvocation(TransactionInterceptor.java:123)
+	at org.springframework.transaction.interceptor.TransactionAspectSupport.invokeWithinTransaction(TransactionAspectSupport.java:388)
+	at org.springframework.transaction.interceptor.TransactionInterceptor.invoke(TransactionInterceptor.java:119)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:186)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:762)
+	at org.springframework.aop.framework.CglibAopProxy$DynamicAdvisedInterceptor.intercept(CglibAopProxy.java:707)
+	at com.ctbcins.hrimport.service.HRDataProcessService$$EnhancerBySpringCGLIB$$9b950274.processHRFile(<generated>)
+	at com.ctbcins.hrimport.job.ScheduledImportJob.runLocalImportJob(ScheduledImportJob.java:105)
+	at com.ctbcins.hrimport.job.ScheduledImportJob.minuteImportJob(ScheduledImportJob.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.scheduling.support.ScheduledMethodRunnable.run(ScheduledMethodRunnable.java:84)
+	at org.springframework.scheduling.support.DelegatingErrorHandlingRunnable.run(DelegatingErrorHandlingRunnable.java:54)
+	at org.springframework.scheduling.concurrent.ReschedulingRunnable.run(ReschedulingRunnable.java:95)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:304)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 處理員工資料失敗: 許郁潔 (CD025)
+java.lang.RuntimeException: 員工處理失敗
+	at com.ctbcins.hrimport.service.HRDataProcessService.processSingleEmployee(HRDataProcessService.java:224)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processEmployees(HRDataProcessService.java:170)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processHRFile(HRDataProcessService.java:72)
+	at com.ctbcins.hrimport.service.HRDataProcessService$$FastClassBySpringCGLIB$$2d1c3c53.invoke(<generated>)
+	at org.springframework.cglib.proxy.MethodProxy.invoke(MethodProxy.java:218)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.invokeJoinpoint(CglibAopProxy.java:792)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:163)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:762)
+	at org.springframework.transaction.interceptor.TransactionInterceptor$1.proceedWithInvocation(TransactionInterceptor.java:123)
+	at org.springframework.transaction.interceptor.TransactionAspectSupport.invokeWithinTransaction(TransactionAspectSupport.java:388)
+	at org.springframework.transaction.interceptor.TransactionInterceptor.invoke(TransactionInterceptor.java:119)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:186)
+	at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.proceed(CglibAopProxy.java:762)
+	at org.springframework.aop.framework.CglibAopProxy$DynamicAdvisedInterceptor.intercept(CglibAopProxy.java:707)
+	at com.ctbcins.hrimport.service.HRDataProcessService$$EnhancerBySpringCGLIB$$9b950274.processHRFile(<generated>)
+	at com.ctbcins.hrimport.job.ScheduledImportJob.runLocalImportJob(ScheduledImportJob.java:105)
+	at com.ctbcins.hrimport.job.ScheduledImportJob.minuteImportJob(ScheduledImportJob.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.scheduling.support.ScheduledMethodRunnable.run(ScheduledMethodRunnable.java:84)
+	at org.springframework.scheduling.support.DelegatingErrorHandlingRunnable.run(DelegatingErrorHandlingRunnable.java:54)
+	at org.springframework.scheduling.concurrent.ReschedulingRunnable.run(ReschedulingRunnable.java:95)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:304)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+Caused by: org.springframework.dao.EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+	at org.springframework.dao.support.DataAccessUtils.nullableSingleResult(DataAccessUtils.java:98)
+	at org.springframework.jdbc.core.JdbcTemplate.queryForObject(JdbcTemplate.java:882)
+	at org.springframework.jdbc.core.JdbcTemplate.queryForObject(JdbcTemplate.java:908)
+	at com.ctbcins.hrimport.service.HRDataProcessService.processSingleEmployee(HRDataProcessService.java:212)
+	... 29 common frames omitted
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 員工資料處理完成: 成功 0 筆, 失敗 2 筆
+2025-11-25 16:48:00 - c.c.h.service.HRDataProcessService - 成功處理HR資料檔案: C:\project\testdata\citic\1760430659478_英特內人事資料.csv, 有效記錄數: 2
+2025-11-25 16:48:00 - c.c.hrimport.job.ScheduledImportJob - 本機 HR 匯入完成，共處理 1 個 CSV

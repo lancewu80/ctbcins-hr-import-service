@@ -1,4 +1,4 @@
-package com.citic.hrimport.dto;
+package com.ctbcins.hrimport.dto;
 
 import com.opencsv.bean.CsvBindByName;
 

@@ -1,4 +1,4 @@
-package com.citic.hrimport.entity;
+package com.ctbcins.hrimport.entity;
 
 import javax.persistence.*;
 import java.util.UUID;

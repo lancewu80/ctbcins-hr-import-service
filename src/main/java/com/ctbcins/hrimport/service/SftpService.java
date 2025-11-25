@@ -1,4 +1,4 @@
-package com.citic.hrimport.service;
+package com.ctbcins.hrimport.service;
 
 import com.jcraft.jsch.*;
 import org.slf4j.Logger;

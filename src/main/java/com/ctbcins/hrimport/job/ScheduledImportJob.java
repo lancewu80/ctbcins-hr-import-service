@@ -1,13 +1,14 @@
-package com.citic.hrimport.job;
+package com.ctbcins.hrimport.job;
 
-import com.citic.hrimport.service.SftpService;
-import com.citic.hrimport.service.HRDataProcessService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import com.ctbcins.hrimport.service.HRDataProcessService;
+import com.ctbcins.hrimport.service.SftpService;
 
 import java.io.File;
 
