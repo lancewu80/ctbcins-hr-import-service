@@ -2,6 +2,9 @@
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='CUS_HRImport_Department' AND xtype='U')
 CREATE TABLE CUS_HRImport_Department (
     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+    cpynid NVARCHAR(50),
+    dep_no NVARCHAR(50),
+    dep_code NVARCHAR(50),
     name NVARCHAR(200) NOT NULL,
     full_name NVARCHAR(200) NOT NULL,
     code NVARCHAR(50) UNIQUE NOT NULL,
@@ -16,3 +19,5 @@ CREATE TABLE CUS_HRImport_Department (
 -- 建立索引
 CREATE INDEX IX_CUS_HRImport_Department_Code ON CUS_HRImport_Department(code);
 CREATE INDEX IX_CUS_HRImport_Department_ParentCode ON CUS_HRImport_Department(parent_code);
+CREATE INDEX IX_CUS_HRImport_Department_dep_no ON CUS_HRImport_Department(dep_no);
+CREATE INDEX IX_CUS_HRImport_Department_dep_code ON CUS_HRImport_Department(dep_code);

@@ -68,7 +68,7 @@ public class ScheduledImportJob {
             for (File file : downloadedFiles) {
                 try {
                     hrDataProcessService.processHRFile(file.getAbsolutePath());
-                    file.delete();
+                    //file.delete();
                 } catch (Exception e) {
                     logger.error("處理檔案失敗: {}", file.getName(), e);
                 }
@@ -103,7 +103,7 @@ public class ScheduledImportJob {
                 try {
                     logger.info("處理本機 CSV 檔案: {}", file.getName());
                     hrDataProcessService.processHRFile(file.getAbsolutePath());
-                    file.delete();
+                    //file.delete();
                 } catch (Exception e) {
                     logger.error("處理本機檔案失敗: {}", file.getName(), e);
                 }

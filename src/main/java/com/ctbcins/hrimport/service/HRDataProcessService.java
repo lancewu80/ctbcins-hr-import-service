@@ -19,6 +19,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import org.apache.commons.io.input.BOMInputStream;
+import java.io.*;
+
 @Service
 public class HRDataProcessService {
     private static final Logger logger = LoggerFactory.getLogger(HRDataProcessService.class);
@@ -35,21 +38,24 @@ public class HRDataProcessService {
     @Transactional
     public void processHRFile(String filePath) {
         logger.info("開始處理HR檔案: {}", filePath);
-        
-        try (Reader reader = new FileReader(filePath, StandardCharsets.UTF_8)) {
+
+        try (InputStream inputStream = new FileInputStream(filePath);
+             BOMInputStream bomInputStream = new BOMInputStream(inputStream);
+             Reader reader = new InputStreamReader(bomInputStream, StandardCharsets.UTF_8)) {
+
             // 設定CSV映射策略
-            HeaderColumnNameMappingStrategy<HRData> strategy = 
-                new HeaderColumnNameMappingStrategy<>();
+            HeaderColumnNameMappingStrategy<HRData> strategy =
+                    new HeaderColumnNameMappingStrategy<>();
             strategy.setType(HRData.class);
-            
+
             CsvToBean<HRData> csvToBean = new CsvToBeanBuilder<HRData>(reader)
                     .withMappingStrategy(strategy)
                     .withIgnoreLeadingWhiteSpace(true)
                     .withIgnoreEmptyLine(true)
                     .build();
-            
+
             List<HRData> hrDataList = csvToBean.parse();
-            
+
             // 過濾有效資料（移除空行和無效資料）
             List<HRData> validData = hrDataList.stream()
                     .filter(data -> data.getDepCode() != null && !data.getDepCode().trim().isEmpty())
@@ -102,6 +108,8 @@ public class HRDataProcessService {
     private void processSingleDepartment(HRData hrData) {
         String depName = hrData.getDepName();
         String depCode = hrData.getDepCode();
+        String depNo = hrData.getDepNo();
+        String cpnyId = hrData.getCpnyId();
         
         if (depName == null || depName.trim().isEmpty()) {
             logger.warn("部門名稱為空，跳過處理。部門代碼: {}", depCode);
@@ -118,7 +126,7 @@ public class HRDataProcessService {
             String currentDeptName = deptParts[i].trim();
             String parentDeptCode = (i > 0) ? buildDeptCode(deptParts, i - 1) : null;
             String currentDeptCode = buildDeptCode(deptParts, i);
-            int treeLevel = i + 1; // 從1開始
+            int treeLevel = i + 2; // 從2開始
             
             // 檢查部門是否存在
             String checkSql = "SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?";
@@ -127,22 +135,22 @@ public class HRDataProcessService {
             if (count == 0) {
                 // 新增部門
                 String insertSql = "INSERT INTO CUS_HRImport_Department " +
-                        "(id, name, full_name, code, manager, parent_code, description, tree_level) " +
-                        "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?)";
+                        "(id, cpynid, dep_no, dep_code, name, full_name, code, manager, parent_code, description, tree_level) " +
+                        "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 
-                jdbcTemplate.update(insertSql, 
-                        currentDeptName, currentDeptName, currentDeptCode, 
+                jdbcTemplate.update(insertSql,
+                        cpnyId, depNo, depCode, currentDeptName, currentDeptName, currentDeptCode,
                         "系統管理員", parentDeptCode, currentDeptName, treeLevel);
                 
                 logger.info("新增部門: {} (代碼: {}, 層級: {})", currentDeptName, currentDeptCode, treeLevel);
             } else {
                 // 更新部門
-                String updateSql = "UPDATE CUS_HRImport_Department SET name = ?, full_name = ?, " +
+                String updateSql = "UPDATE CUS_HRImport_Department SET cpynid = ?, dep_no = ?, dep_code = ?, name = ?, full_name = ?, " +
                         "manager = ?, parent_code = ?, description = ?, tree_level = ? " +
                         "WHERE code = ?";
                 
-                jdbcTemplate.update(updateSql, 
-                        currentDeptName, currentDeptName, "系統管理員", 
+                jdbcTemplate.update(updateSql,
+                        cpnyId, depNo, depCode, currentDeptName, currentDeptName, "系統管理員",
                         parentDeptCode, currentDeptName, treeLevel, currentDeptCode);
                 
                 logger.debug("更新部門: {} (代碼: {}, 層級: {})", currentDeptName, currentDeptCode, treeLevel);
@@ -184,7 +192,8 @@ public class HRDataProcessService {
         String empName = hrData.getEmpName();
         String mobile = hrData.getMobile();
         String depCode = hrData.getDepCode();
-        
+        String depName = hrData.getDepName();
+
         if (workcard == null || workcard.trim().isEmpty()) {
             logger.warn("員工編號為空，跳過處理。員工姓名: {}", empName);
             return;
@@ -198,7 +207,7 @@ public class HRDataProcessService {
             Integer accountCount = jdbcTemplate.queryForObject(checkAccountSql, Integer.class, workcard);
             
             // 取得部門ID
-            String deptIdSql = "SELECT id FROM CUS_HRImport_Department WHERE code = ?";
+            String deptIdSql = "SELECT id FROM CUS_HRImport_Department WHERE dep_code = ?";
             List<UUID> departmentIds = jdbcTemplate.queryForList(deptIdSql, UUID.class, depCode);
             UUID departmentId = departmentIds.isEmpty() ? null : departmentIds.get(0);
             
@@ -209,7 +218,7 @@ public class HRDataProcessService {
             
             // 取得部門層級
             String levelSql = "SELECT tree_level FROM CUS_HRImport_Department WHERE code = ?";
-            Integer treeLevel = jdbcTemplate.queryForObject(levelSql, Integer.class, depCode);
+            Integer treeLevel = jdbcTemplate.queryForObject(levelSql, Integer.class, depName);
             
             if (accountCount == 0) {
                 // 新增員工

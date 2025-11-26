@@ -36,6 +36,7 @@ app:
 
 logging:
   level:
+    ROOT: DEBUG
     com.citic.hrimport: DEBUG
   file:
     name: logs/hr-import.log

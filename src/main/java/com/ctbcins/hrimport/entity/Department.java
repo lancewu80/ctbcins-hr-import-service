@@ -10,7 +10,16 @@ public class Department {
     @GeneratedValue
     @Column(columnDefinition = "uniqueidentifier")
     private UUID id;
-    
+
+    @Column(name = "cpynid",columnDefinition = "nvarchar(50)")
+    private String cpynid;
+
+    @Column(name = "dep_no",columnDefinition = "nvarchar(50)")
+    private String dep_no;
+
+    @Column(name = "dep_code",columnDefinition = "nvarchar(50)")
+    private String dep_code;
+
     @Column(name = "name",columnDefinition = "nvarchar(200)")
     private String name;
     
