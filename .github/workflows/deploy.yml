@@ -2,9 +2,9 @@ name: Build and Deploy HR Import Service
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   build:
@@ -56,4 +56,5 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: docker-image
+
         path: hr-import-service.tar
