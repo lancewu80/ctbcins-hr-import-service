@@ -27,7 +27,7 @@ jobs:
       run: mvn test
     
     - name: Upload Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: hr-import-service
         path: target/*.jar
@@ -58,4 +58,5 @@ jobs:
         name: docker-image
 
         path: hr-import-service.tar
+
 
