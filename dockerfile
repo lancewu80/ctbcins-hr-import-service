@@ -1,16 +1,10 @@
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:17-jdk-slim AS build
+WORKDIR /app
+COPY pom.xml mvnw ./
+COPY src ./src
+RUN ./mvnw clean package -DskipTests
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    fontconfig fonts-dejavu-extra \
-    && rm -rf /var/lib/apt/lists/*
-
-VOLUME /tmp
-
-ARG JAR_FILE=target/hr-import-service-1.0.0.jar
-COPY ${JAR_FILE} app.jar
-
-RUN groupadd -r spring && useradd -r -g spring spring
-USER spring
-
-
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app.jar"]
+FROM eclipse-temurin:17-jre-slim
+WORKDIR /app
+COPY --from=build /app/target/hr-import-service-1.0.0.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]
