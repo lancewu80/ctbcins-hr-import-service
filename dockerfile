@@ -1,4 +1,4 @@
-FROM openjdk:11-jre-slim
+FROM eclipse-temurin:17-jre
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fontconfig fonts-dejavu-extra \
@@ -11,5 +11,6 @@ COPY ${JAR_FILE} app.jar
 
 RUN groupadd -r spring && useradd -r -g spring spring
 USER spring
+
 
 ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app.jar"]
