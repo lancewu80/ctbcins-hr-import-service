@@ -47,3 +47,4 @@ scheduler:
     enabled: true         # true: 每分鐘會跑 ; false: 完全停用
     cron: "0 * * * * *"   # 每分鐘一次
     localPath: "C:\\project\\testdata\\citic"
+    localArchivePath: "C:\\project\\testdata\\archive"
