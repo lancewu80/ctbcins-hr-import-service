@@ -1,15 +1,22 @@
-FROM openjdk:11-jre-slim
+# Stage 1: Build JAR
+FROM eclipse-temurin:17-jdk-jammy AS build
+WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    fontconfig fonts-dejavu-extra \
-    && rm -rf /var/lib/apt/lists/*
+# Install Maven
+RUN apt-get update && \
+    apt-get install -y maven && \
+    rm -rf /var/lib/apt/lists/*
 
-VOLUME /tmp
+COPY pom.xml ./ 
+COPY src ./src
 
-ARG JAR_FILE=target/hr-import-service-1.0.0.jar
-COPY ${JAR_FILE} app.jar
+RUN mvn clean package -DskipTests
 
-RUN groupadd -r spring && useradd -r -g spring spring
-USER spring
 
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app.jar"]
+# Stage 2: Create runtime image
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
+COPY --from=build /app/target/hr-import-service-1.0.0.jar app.jar
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
+
