@@ -1,0 +1,124 @@
+ # 可重用 workflow：在 GitHub runner 上 build 或 pull 並執行指定的 docker image
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: 'Image name (e.g. ghcr.io/org/repo:tag or repo:tag)'
+        required: true
+        type: string
+      build:
+        description: '是否在 runner 上 build image（true/false）'
+        required: false
+        type: boolean
+        default: false
+      context:
+        description: 'docker build context'
+        required: false
+        type: string
+        default: '.'
+      dockerfile:
+        description: 'Dockerfile path'
+        required: false
+        type: string
+        default: 'Dockerfile'
+      ports:
+        description: 'ports mapping, comma separated e.g. "8080:8080,5000:5000"'
+        required: false
+        type: string
+        default: ''
+      env:
+        description: 'env vars, comma separated e.g. "KEY=val,KEY2=val2"'
+        required: false
+        type: string
+        default: ''
+      run_args:
+        description: 'additional docker run args'
+        required: false
+        type: string
+        default: ''
+      run_cmd:
+        description: 'command to run in container (optional)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      docker_registry_username:
+        required: false
+      docker_registry_password:
+        required: false
+
+jobs:
+  run-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker (use Docker CLI available on runner)
+        run: docker --version
+
+      - name: Build image on runner (if build=true)
+        if: ${{ inputs.build == true }}
+        run: |
+          echo "Building image ${{ inputs.image }} from context '${{ inputs.context }}' and dockerfile '${{ inputs.dockerfile }}'"
+          docker build -t "${{ inputs.image }}" -f "${{ inputs.dockerfile }}" "${{ inputs.context }}"
+
+      - name: Login to registry for pull (if build=false and creds provided)
+        if: ${{ inputs.build == false && secrets.docker_registry_password != '' }}
+        run: |
+          echo "${{ secrets.docker_registry_password }}" | docker login --username "${{ secrets.docker_registry_username }}" --password-stdin
+        # 若要使用特定 registry，caller 可傳入 full image name 如 ghcr.io/org/repo:tag 並設定相應 secrets
+
+      - name: Pull image (if build=false)
+        if: ${{ inputs.build == false }}
+        run: |
+          echo "Pulling image ${{ inputs.image }}"
+          docker pull "${{ inputs.image }}"
+
+      - name: Run container
+        run: |
+          set -e
+          ID_SUFFIX=$(date +%s)
+          CONTAINER_NAME="gh-run-${{ github.run_id }}-${ID_SUFFIX}"
+          # 構建 port flags
+          PORT_FLAGS=""
+          if [ -n "${{ inputs.ports }}" ]; then
+            IFS=',' read -ra PARR <<< "${{ inputs.ports }}"
+            for p in "${PARR[@]}"; do
+              p_trim=$(echo "$p" | xargs)
+              if [ -n "$p_trim" ]; then
+                PORT_FLAGS="$PORT_FLAGS -p $p_trim"
+              fi
+            done
+          fi
+          # 構建 env flags
+          ENV_FLAGS=""
+          if [ -n "${{ inputs.env }}" ]; then
+            IFS=',' read -ra EARR <<< "${{ inputs.env }}"
+            for e in "${EARR[@]}"; do
+              e_trim=$(echo "$e" | xargs)
+              if [ -n "$e_trim" ]; then
+                ENV_FLAGS="$ENV_FLAGS -e \"$e_trim\""
+              fi
+            done
+          fi
+          # 最終 run
+          echo "Running container ${CONTAINER_NAME} from image ${{ inputs.image }}"
+          sh -c "docker run -d --name ${CONTAINER_NAME} $PORT_FLAGS $ENV_FLAGS ${{ inputs.run_args }} ${{ inputs.image }} ${{ inputs.run_cmd }} || (docker logs ${CONTAINER_NAME} || true; exit 1)"
+          docker ps --filter "name=${CONTAINER_NAME}" --format "Container started: {{.ID}} {{.Image}} {{.Names}}"
+          echo "container-name=${CONTAINER_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Show container logs (short)
+        if: always()
+        run: |
+          if [ -n "$(docker ps -a -f "name=gh-run-${{ github.run_id }}" --format '{{.Names}}')" ]; then
+            echo "Recent logs for container(s):"
+            docker ps -a -f "name=gh-run-${{ github.run_id }}" --format '{{.Names}}' | while read name; do
+              echo "=== $name ==="
+              docker logs --tail 200 "$name" || true
+            done
+          else
+            echo "No container found."
+          fi
+
