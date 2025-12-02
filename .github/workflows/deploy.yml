@@ -32,32 +32,19 @@ jobs:
         name: hr-import-service
         path: target/*.jar
 
-  docker:
-    runs-on: ubuntu-latest
+  run-image:
     needs: build
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Download Artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: hr-import-service
-    
-    - name: Build Docker image
-      run: |
-        docker build -t hr-import-service:latest .
-    
-    - name: Save Docker image
-      run: |
-        docker save hr-import-service:latest -o hr-import-service.tar
-    
-    - name: Upload Docker image
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-image
-
-        path: hr-import-service.tar
-
-
-
+    uses: ./.github/workflows/run-docker-on-github.yml
+    with:
+      image: hr-import-service:latest
+      build: true
+      context: .
+      dockerfile: Dockerfile
+      ports: ""
+      env: ""
+      run_args: ""
+      run_cmd: ""
+    secrets:
+      # pass your registry credentials if you need to pull/push images; optional if you only build locally
+      docker_registry_username: ${{ secrets.DOCKER_USERNAME }}
+      docker_registry_password: ${{ secrets.DOCKER_PASSWORD }}
