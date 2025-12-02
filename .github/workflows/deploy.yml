@@ -1,5 +1,10 @@
 name: Build and Deploy HR Import Service
 
+# Grant explicit permissions so the workflow can push packages when using GITHUB_TOKEN
+permissions:
+  contents: read
+  packages: write
+
 on:
   push:
     branches: [ master ]
@@ -86,8 +91,18 @@ jobs:
 
       - name: Log in to GitHub Container Registry (GHCR)
         run: |
-          echo "Logging in to ghcr.io"
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # Prefer a Personal Access Token stored in GHCR_PAT when organization policies restrict package creation.
+          if [ -n "${{ secrets.GHCR_PAT }}" ]; then
+            echo "Using GHCR_PAT (personal access token) to login as ${{ github.actor }}"
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          elif [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
+            echo "GHCR_PAT not provided; attempting login with GITHUB_TOKEN as ${{ github.actor }}"
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin || (
+              echo "Login with GITHUB_TOKEN failed. If your organization restricts package creation, create a PAT with 'write:packages' and add it to repository secrets as GHCR_PAT."; exit 1
+            )
+          else
+            echo "No GHCR_PAT or GITHUB_TOKEN available. Create a PAT with 'write:packages' and add it as repository secret GHCR_PAT."; exit 1
+          fi
 
       - name: Build and push image to GHCR
         env:
