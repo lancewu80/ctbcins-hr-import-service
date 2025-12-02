@@ -22,7 +22,20 @@ jobs:
     
     - name: Build with Maven
       run: mvn -B package -DskipTests
-    
+
+    - name: Show target directory (debug)
+      run: |
+        echo "Listing target/ contents:" 
+        ls -la target || true
+
+    - name: Ensure jar exists
+      run: |
+        if ls target/*.jar 1> /dev/null 2>&1; then
+          echo "JAR found:"; ls -la target/*.jar
+        else
+          echo "ERROR: No jar produced in target/"; ls -la || true; exit 1
+        fi
+
     - name: Run Tests
       run: mvn test
     
@@ -45,6 +58,47 @@ jobs:
       run_args: ""
       run_cmd: ""
     secrets:
-      # pass your registry credentials if you need to pull/push images; optional if you only build locally
       docker_registry_username: ${{ secrets.DOCKER_USERNAME }}
       docker_registry_password: ${{ secrets.DOCKER_PASSWORD }}
+
+  publish-image:
+    name: Build and Publish Image to GHCR
+    needs: [build, run-image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download built JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hr-import-service
+          path: artifact
+
+      - name: Prepare JAR for Docker build
+        run: |
+          echo "Copying jar into repo workspace for Docker build"
+          cp artifact/*.jar ./app.jar
+          ls -la ./app.jar || true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        run: |
+          echo "Logging in to ghcr.io"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push image to GHCR
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/hr-import-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Building Docker image ${IMAGE_NAME}:${IMAGE_TAG}"
+          docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+          echo "Pushing Docker image ${IMAGE_NAME}:${IMAGE_TAG}"
+          docker push ${IMAGE_NAME}:${IMAGE_TAG}
+
+      - name: Confirm pushed image
+        run: |
+          echo "Pushed image: ghcr.io/${{ github.repository_owner }}/hr-import-service:${{ github.sha }}"
