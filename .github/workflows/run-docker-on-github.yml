@@ -1,4 +1,4 @@
- # 可重用 workflow：在 GitHub runner 上 build 或 pull 並執行指定的 docker image
+# 可重用 workflow：在 GitHub runner 上 build 或 pull 並執行指定的 docker image
 
 on:
   workflow_call:
@@ -65,10 +65,16 @@ jobs:
           docker build -t "${{ inputs.image }}" -f "${{ inputs.dockerfile }}" "${{ inputs.context }}"
 
       - name: Login to registry for pull (if build=false and creds provided)
-        if: ${{ inputs.build == false && secrets.docker_registry_password != '' }}
+        if: ${{ inputs.build == false }}
         run: |
-          echo "${{ secrets.docker_registry_password }}" | docker login --username "${{ secrets.docker_registry_username }}" --password-stdin
-        # 若要使用特定 registry，caller 可傳入 full image name 如 ghcr.io/org/repo:tag 並設定相應 secrets
+          # Only attempt docker login if secrets were provided. We can't reference secrets in the step `if` expression in reusable workflows,
+          # so check them at runtime inside the shell.
+          if [ -n "${{ secrets.docker_registry_password }}" ] && [ -n "${{ secrets.docker_registry_username }}" ]; then
+            echo "Logging in to registry"
+            echo "${{ secrets.docker_registry_password }}" | docker login --username "${{ secrets.docker_registry_username }}" --password-stdin
+          else
+            echo "No registry credentials provided; skipping docker login."
+          fi
 
       - name: Pull image (if build=false)
         if: ${{ inputs.build == false }}
@@ -121,4 +127,3 @@ jobs:
           else
             echo "No container found."
           fi
-
