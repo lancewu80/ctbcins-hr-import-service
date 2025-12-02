@@ -45,6 +45,15 @@ public class Department {
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     
+    public String getCpynid() { return cpynid; }
+    public void setCpynid(String cpynid) { this.cpynid = cpynid; }
+
+    public String getDep_no() { return dep_no; }
+    public void setDep_no(String dep_no) { this.dep_no = dep_no; }
+
+    public String getDep_code() { return dep_code; }
+    public void setDep_code(String dep_code) { this.dep_code = dep_code; }
+
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     
@@ -65,4 +74,14 @@ public class Department {
     
     public Integer getTreeLevel() { return treeLevel; }
     public void setTreeLevel(Integer treeLevel) { this.treeLevel = treeLevel; }
+
+    // camelCase aliases
+    public String getCpnyId() { return cpynid; }
+    public void setCpnyId(String cpnyId) { this.cpynid = cpnyId; }
+
+    public String getDepNo() { return dep_no; }
+    public void setDepNo(String depNo) { this.dep_no = depNo; }
+
+    public String getDepCode() { return dep_code; }
+    public void setDepCode(String depCode) { this.dep_code = depCode; }
 }

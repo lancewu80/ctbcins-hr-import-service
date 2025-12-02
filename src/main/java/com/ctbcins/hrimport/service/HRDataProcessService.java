@@ -212,15 +212,16 @@ public class HRDataProcessService {
 
     private void processDepartments(List<HRData> hrDataList) {
         logger.info("開始處理部門資料，共 {} 筆記錄", hrDataList.size());
-        
-        // 依部門代碼分組，避免重複處理
-        Map<String, List<HRData>> departmentGroups = hrDataList.stream()
-                .collect(Collectors.groupingBy(HRData::getDepCode));
-        
-        logger.info("需要處理的部門數量: {}", departmentGroups.size());
-        
-        for (Map.Entry<String, List<HRData>> entry : departmentGroups.entrySet()) {
-            HRData sampleData = entry.getValue().get(0);
+
+        // Build unique set of full DEP_NAME values from CSV (avoid creating parent-only entries)
+        Map<String, HRData> fullDeptMap = hrDataList.stream()
+                .filter(d -> d.getDepName() != null && !d.getDepName().trim().isEmpty())
+                .collect(Collectors.toMap(HRData::getDepName, d -> d, (a, b) -> a));
+
+        logger.info("需要處理的部門數量 (依完整 DEP_NAME): {}", fullDeptMap.size());
+
+        for (Map.Entry<String, HRData> entry : fullDeptMap.entrySet()) {
+            HRData sampleData = entry.getValue();
             try {
                 processSingleDepartment(sampleData);
             } catch (Exception e) {
@@ -231,54 +232,80 @@ public class HRDataProcessService {
     }
     
     private void processSingleDepartment(HRData hrData) {
-        String depName = hrData.getDepName();
+        String fullDeptName = hrData.getDepName();
         String depCode = hrData.getDepCode();
         String depNo = hrData.getDepNo();
         String cpnyId = hrData.getCpnyId();
-        
-        if (depName == null || depName.trim().isEmpty()) {
+
+        if (fullDeptName == null || fullDeptName.trim().isEmpty()) {
             logger.warn("部門名稱為空，跳過處理。部門代碼: {}", depCode);
             return;
         }
-        
-        logger.debug("處理部門: {} ({})", depName, depCode);
-        
-        // 拆解部門名稱
-        String[] deptParts = depName.split("-");
-        
-        // 處理每個層級的部門
-        for (int i = 0; i < deptParts.length; i++) {
-            String currentDeptName = deptParts[i].trim();
-            String parentDeptCode = (i > 0) ? buildDeptCode(deptParts, i - 1) : null;
-            String currentDeptCode = buildDeptCode(deptParts, i);
-            int treeLevel = i + 2; // 從2開始
-            
-            // 檢查部門是否存在
-            String checkSql = "SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?";
-            Integer count = jdbcTemplate.queryForObject(checkSql, Integer.class, currentDeptCode);
-            
-            if (count == 0) {
-                // 新增部門
-                String insertSql = "INSERT INTO CUS_HRImport_Department " +
-                        "(id, cpynid, dep_no, dep_code, name, full_name, code, manager, parent_code, description, tree_level) " +
-                        "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-                
-                jdbcTemplate.update(insertSql,
-                        cpnyId, depNo, depCode, currentDeptName, currentDeptName, currentDeptCode,
-                        "系統管理員", parentDeptCode, currentDeptName, treeLevel);
-                
-                logger.info("新增部門: {} (代碼: {}, 層級: {})", currentDeptName, currentDeptCode, treeLevel);
-            } else {
-                // 更新部門
-                String updateSql = "UPDATE CUS_HRImport_Department SET cpynid = ?, dep_no = ?, dep_code = ?, name = ?, full_name = ?, " +
-                        "manager = ?, parent_code = ?, description = ?, tree_level = ? " +
-                        "WHERE code = ?";
-                
-                jdbcTemplate.update(updateSql,
-                        cpnyId, depNo, depCode, currentDeptName, currentDeptName, "系統管理員",
-                        parentDeptCode, currentDeptName, treeLevel, currentDeptCode);
-                
-                logger.debug("更新部門: {} (代碼: {}, 層級: {})", currentDeptName, currentDeptCode, treeLevel);
+
+        // compute parts
+        String[] parts = fullDeptName.split("-");
+        String shortName = parts[parts.length - 1].trim();
+        String parentDeptCode = (parts.length > 1) ? String.join("-", Arrays.copyOf(parts, parts.length - 1)) : null;
+        String code = fullDeptName.trim(); // keep full dept string as unique code
+        int treeLevel = parts.length + 1; // preserve previous convention
+
+        logger.debug("處理部門(完整名稱): {} -> 短名: {}, 代碼: {}, 父代碼: {}, 層級: {}", fullDeptName, shortName, code, parentDeptCode, treeLevel);
+
+        // 檢查部門是否存在（以 code 為唯一鍵）
+        String checkSql = "SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?";
+        Integer count = jdbcTemplate.queryForObject(checkSql, Integer.class, code);
+
+        if (count == null || count == 0) {
+            // 新增部門 (name = shortName, full_name = fullDeptName)
+            String insertSql = "INSERT INTO CUS_HRImport_Department " +
+                    "(id, cpynid, dep_no, dep_code, name, full_name, code, manager, parent_code, description, tree_level) " +
+                    "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            jdbcTemplate.update(insertSql,
+                    cpnyId, depNo, depCode, shortName, fullDeptName, code,
+                    "系統管理員", parentDeptCode, depNo, treeLevel);
+
+            logger.info("新增部門: {} (代碼: {}, 層級: {})", fullDeptName, code, treeLevel);
+        } else {
+            // 更新部門
+            String updateSql = "UPDATE CUS_HRImport_Department SET cpynid = ?, dep_no = ?, dep_code = ?, name = ?, full_name = ?, " +
+                    "manager = ?, parent_code = ?, description = ?, tree_level = ? " +
+                    "WHERE code = ?";
+
+            jdbcTemplate.update(updateSql,
+                    cpnyId, depNo, depCode, shortName, fullDeptName, "系統管理員",
+                    parentDeptCode, depNo, treeLevel, code);
+
+            logger.debug("更新部門: {} (代碼: {}, 層級: {})", fullDeptName, code, treeLevel);
+        }
+
+        // 取得或查詢剛剛 insert/update 的 CUS_HRImport_Department.id
+        UUID cusId = null;
+        try {
+            String idSql = "SELECT id FROM CUS_HRImport_Department WHERE code = ?";
+            cusId = jdbcTemplate.queryForObject(idSql, UUID.class, code);
+        } catch (EmptyResultDataAccessException e) {
+            logger.warn("未取得 CUS_HRImport_Department id (code={})", code);
+        }
+
+        if (cusId != null) {
+            Department dept = new Department();
+            dept.setId(cusId);
+            dept.setCpynid(cpnyId);
+            dept.setDep_no(depNo);
+            dept.setDep_code(depCode);
+            dept.setName(shortName);
+            dept.setFullName(fullDeptName);
+            dept.setCode(code);
+            dept.setManager("系統管理員");
+            dept.setParentCode(parentDeptCode);
+            dept.setDescription(depNo);
+            dept.setTreeLevel(treeLevel);
+
+            try {
+                insertOrUpdateTsDepartment(dept);
+            } catch (Exception e) {
+                logger.error("同步到 TsDepartment 失敗 (code={}): {}", code, e.getMessage(), e);
             }
         }
     }
@@ -300,14 +327,15 @@ public class HRDataProcessService {
 
         // Step 1: 查找 FParentId (父部門的 FId)
         UUID parentFId = null;
-        if (dept.getParentCode() != null && !dept.getParentCode().isEmpty()) {
-            // 從 TsDepartment 透過 FShortCode (對應 CUS_HRImport_Department.parent_code) 查找父部門的 FId
-            // 用 Code 查找父紀錄在 TsDepartment 中的 FId
-            String parentIdSql = "SELECT FId FROM TsDepartment WHERE FFullName = ?";
+        if (dept.getTreeLevel() != null && dept.getTreeLevel() == 2) {
+            // tree level 2 => top-level department, map to provided root GUID
+            parentFId = UUID.fromString("00000000-0000-0000-1001-000000000001");
+        } else if (dept.getParentCode() != null && !dept.getParentCode().isEmpty()) {
             try {
-                parentFId = jdbcTemplate.queryForObject(parentIdSql, UUID.class, dept.getFullName());
+                String parentIdSql = "SELECT id FROM CUS_HRImport_Department WHERE code = ?";
+                parentFId = jdbcTemplate.queryForObject(parentIdSql, UUID.class, dept.getParentCode());
             } catch (EmptyResultDataAccessException e) {
-                logger.warn("未找到父部門 Code: {}，FParentId 設為 NULL。", dept.getParentCode());
+                logger.warn("未找到父部門 (code={}) 的 CUS id，FParentId 設為 NULL。", dept.getParentCode());
                 parentFId = null;
             } catch (Exception e) {
                 logger.error("查找父部門FId時發生錯誤，Code: {}", dept.getParentCode(), e);
@@ -317,7 +345,6 @@ public class HRDataProcessService {
         // Step 2: 使用 MERGE INTO 插入或更新 TsDepartment
         // TsDepartment 欄位: FId, FParentId, FIndex, FTreeLevel, FTreeSerial, FName, FFullName, FShortCode, FDescription
 
-        // 注意：FTreeSerial 欄位我們暫時用 FShortCode (即 Code) 代替，您可能需要額外邏輯計算樹狀序列
         String mergeSql =
                 "MERGE INTO TsDepartment AS Target " +
                         "USING (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)) " +
@@ -331,22 +358,31 @@ public class HRDataProcessService {
                         "        FFullName = Source.FFullName, " +
                         "        FShortCode = Source.FShortCode, " +
                         "        FDescription = Source.FDescription, " +
-                        "        FTreeSerial = Source.FTreeSerial " +
+                        "        FTreeSerial = Source.FTreeSerial, " +
+                        "        FUserId = ? , " +
+                        "        FIsServices = 0, " +
+                        "        FIsSales = 0, " +
+                        "        FEnabled = 1, " +
+                        "        FIsCompany = 0 " +
                         "WHEN NOT MATCHED BY TARGET THEN " +
-                        "    INSERT (FId, FParentId, FIndex, FTreeLevel, FTreeSerial, FName, FFullName, FShortCode, FDescription, FEnabled, FIsCompany) " +
-                        "    VALUES (Source.FId, Source.FParentId, Source.FIndex, Source.FTreeLevel, Source.FTreeSerial, Source.FName, Source.FFullName, Source.FShortCode, Source.FDescription, 1, 0);"; // FEnabled=1, FIsCompany=0 採用預設值
+                        "    INSERT (FId, FParentId, FIndex, FTreeLevel, FTreeSerial, FName, FFullName, FShortCode, FDescription, FUserId, FEnabled, FIsCompany, FIsServices, FIsSales) " +
+                        "    VALUES (Source.FId, Source.FParentId, Source.FIndex, Source.FTreeLevel, Source.FTreeSerial, Source.FName, Source.FFullName, Source.FShortCode, Source.FDescription, ?, 1, 0, 0, 0);";
+
+        UUID fixedUserId = UUID.fromString("00000000-0000-0000-1002-000000000001");
 
         // 執行 MERGE 語句
         jdbcTemplate.update(mergeSql,
                 dept.getId(),                 // FId
-                parentFId,                          // FParentId
-                0,                                  // FIndex (預設 0)
+                parentFId,                    // FParentId
+                0,                             // FIndex (預設 0)
                 dept.getTreeLevel() != null ? dept.getTreeLevel() : 1, // FTreeLevel
-                dept.getName(),                     // FName
-                dept.getFullName(),                 // FFullName
-                dept.getCode(),                     // FShortCode
-                dept.getDescription(),              // FDescription
-                dept.getCode()                      // FTreeSerial (暫時使用 Code)
+                dept.getName(),               // FName
+                dept.getFullName(),           // FFullName
+                dept.getDep_code(),           // FShortCode (mapped from dep_code)
+                dept.getDescription(),        // FDescription
+                dept.getCode(),               // FTreeSerial (使用 Code)
+                fixedUserId,                  // set FUserId on update
+                fixedUserId                   // set FUserId on insert
         );
 
         logger.info("TsDepartment 同步: {} ({}) 完成, FParentId: {}", dept.getName(), dept.getCode(), parentFId);
@@ -402,9 +438,14 @@ public class HRDataProcessService {
             }
             
             // 取得部門層級
-            String levelSql = "SELECT tree_level FROM CUS_HRImport_Department WHERE code = ?";
-            Integer treeLevel = jdbcTemplate.queryForObject(levelSql, Integer.class, depName);
-            
+            String levelSql = "SELECT tree_level FROM CUS_HRImport_Department WHERE dep_code = ?";
+            Integer treeLevel = null;
+            try {
+                treeLevel = jdbcTemplate.queryForObject(levelSql, Integer.class, depCode);
+            } catch (EmptyResultDataAccessException ex) {
+                logger.warn("查不到部門層級 (code={})，預設為NULL", depCode);
+            }
+
             if (accountCount == 0) {
                 // 新增員工
                 createNewEmployee(hrData, departmentId);
