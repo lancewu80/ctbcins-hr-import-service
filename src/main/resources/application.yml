@@ -33,6 +33,7 @@ app:
   processing:
     enabled-states: A
     disabled-states: C,B,D,E
+  default-password: "default_password_reset"
 
 logging:
   level:

@@ -55,6 +55,9 @@ public class HRDataProcessService {
     @Value("${scheduler.hrimport.localArchivePath:}")
     private String localArchivePath;
 
+    @Value("${app.default-password:no_default_password}")
+    private String defaultPassword;
+
     private static final DateTimeFormatter CSV_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     @Transactional
@@ -86,12 +89,19 @@ public class HRDataProcessService {
             // request archive after we finish parsing and inserting raw records
             archiveRequested = true;
 
+            // derive filename for error logging
+            final String sourceFileName = Paths.get(filePath).getFileName().toString();
+
             // 2) 再過濾有效資料繼續後續處理（原有邏輯）
 
             List<HRData> validData = hrDataList.stream()
                     .filter(data -> data.getDepCode() != null && !data.getDepCode().trim().isEmpty())
                     .filter(data -> data.getEmpName() != null && !data.getEmpName().trim().isEmpty())
                     .filter(data -> enabledStates.contains(data.getStateNo()))
+                    // sort by number of '-' in depName (no '-' => 0, come first), then by depName string
+                    .sorted(Comparator
+                            .comparingInt((HRData h) -> countDashes(h.getDepName()))
+                            .thenComparing(h -> Optional.ofNullable(h.getDepName()).orElse("")))
                     .collect(Collectors.toList());
             
             logger.info("CSV檔案解析完成，總記錄數: {}, 有效記錄數: {}", 
@@ -102,10 +112,10 @@ public class HRDataProcessService {
                 // do not return here; allow archive to run after resources are closed
             } else {
                 // 處理部門資料
-                processDepartments(validData);
+                processDepartments(validData, sourceFileName);
 
                 // 處理員工資料
-                processEmployees(validData);
+                processEmployees(validData, sourceFileName);
 
                 logger.info("成功處理HR資料檔案: {}, 有效記錄數: {}", filePath, validData.size());
             }
@@ -188,6 +198,13 @@ public class HRDataProcessService {
             logger.info("已將 {} 筆原始資料匯入 CUS_HRImport (file={})", hrDataList.size(), fileName);
         } catch (Exception ex) {
             logger.error("寫入 CUS_HRImport 發生錯誤", ex);
+            // persist raw import error to error log (so we know which file failed)
+            try {
+                final String fileNameEx = Paths.get(filePath).getFileName().toString();
+                insertErrorLog("RAW", null, null, ex, fileNameEx);
+            } catch (Exception ignore) {
+                logger.warn("寫入 CUS_HRImport_Error_Log 失敗（原始錯誤）: {}", ignore.getMessage());
+            }
             throw new RuntimeException("CUS_HRImport 寫入失敗", ex);
         }
     }
@@ -210,46 +227,73 @@ public class HRDataProcessService {
         }
     }
 
-    private void processDepartments(List<HRData> hrDataList) {
+    private void processDepartments(List<HRData> hrDataList, String sourceFileName) {
         logger.info("開始處理部門資料，共 {} 筆記錄", hrDataList.size());
 
-        // Build unique set of full DEP_NAME values from CSV (avoid creating parent-only entries)
-        Map<String, HRData> fullDeptMap = hrDataList.stream()
+        // Ensure three predefined level-2 parent departments exist (they are not present in CSV)
+        ensureDefaultParentDepartments(sourceFileName);
+
+        // Build unique list of full DEP_NAME values from CSV (avoid creating parent-only entries)
+        List<HRData> uniqueDeptList = hrDataList.stream()
                 .filter(d -> d.getDepName() != null && !d.getDepName().trim().isEmpty())
-                .collect(Collectors.toMap(HRData::getDepName, d -> d, (a, b) -> a));
+                .collect(Collectors.toMap(HRData::getDepName, d -> d, (a, b) -> a))
+                .values().stream()
+                // sort by hierarchy depth: fewer '-' means higher level (parents first), then by name
+                .sorted(Comparator
+                        .comparingInt((HRData h) -> countDashes(h.getDepName()))
+                        .thenComparing(h -> Optional.ofNullable(h.getDepName()).orElse("")))
+                .collect(Collectors.toList());
 
-        logger.info("需要處理的部門數量 (依完整 DEP_NAME): {}", fullDeptMap.size());
+        logger.info("需要處理的部門數量 (依完整 DEP_NAME): {}", uniqueDeptList.size());
 
-        for (Map.Entry<String, HRData> entry : fullDeptMap.entrySet()) {
-            HRData sampleData = entry.getValue();
+        for (HRData sampleData : uniqueDeptList) {
             try {
-                processSingleDepartment(sampleData);
+                processSingleDepartment(sampleData, sourceFileName);
             } catch (Exception e) {
-                logger.error("處理部門失敗: {} - {}", 
-                    sampleData.getDepCode(), sampleData.getDepName(), e);
+                logger.error("處理部門失敗: {} - {}", sampleData.getDepCode(), sampleData.getDepName(), e);
+                // persist error log
+                insertErrorLog("DEPARTMENT", sampleData.getDepCode(), sampleData, e, sourceFileName);
             }
         }
     }
     
-    private void processSingleDepartment(HRData hrData) {
-        String fullDeptName = hrData.getDepName();
-        String depCode = hrData.getDepCode();
-        String depNo = hrData.getDepNo();
-        String cpnyId = hrData.getCpnyId();
+    private void processSingleDepartment(HRData hrData, String sourceFileName) {
+         String fullDeptName = hrData.getDepName();
+         String depCode = hrData.getDepCode();
+         String depNo = hrData.getDepNo();
+         String cpnyId = hrData.getCpnyId();
 
-        if (fullDeptName == null || fullDeptName.trim().isEmpty()) {
-            logger.warn("部門名稱為空，跳過處理。部門代碼: {}", depCode);
-            return;
-        }
+         if (fullDeptName == null || fullDeptName.trim().isEmpty()) {
+             logger.warn("部門名稱為空，跳過處理。部門代碼: {}", depCode);
+             return;
+         }
 
-        // compute parts
-        String[] parts = fullDeptName.split("-");
-        String shortName = parts[parts.length - 1].trim();
-        String parentDeptCode = (parts.length > 1) ? String.join("-", Arrays.copyOf(parts, parts.length - 1)) : null;
-        String code = fullDeptName.trim(); // keep full dept string as unique code
-        int treeLevel = parts.length + 1; // preserve previous convention
+         // compute parts
+         String[] parts = fullDeptName.split("-");
+         String shortName = parts[parts.length - 1].trim();
+         String parentDeptCode = (parts.length > 1) ? String.join("-", Arrays.copyOf(parts, parts.length - 1)) : null;
+         // Special mapping: when tree level is 3, map certain '直轄' prefixes to simplified parents
+         int treeLevel = parts.length + 1; // preserve previous convention
+         String normalized = fullDeptName.trim();
+         if (treeLevel == 3) {
+             if (normalized.startsWith("總經理直轄-")) {
+                 parentDeptCode = "總經理";
+             } else if (normalized.startsWith("董事長直轄-")) {
+                 parentDeptCode = "董事長";
+             }
+         }
+         // Ensure the parent chain exists in CUS_HRImport_Department before inserting this department
+         if (parentDeptCode != null && !parentDeptCode.trim().isEmpty()) {
+             try {
+                 ensureParentChain(parentDeptCode, sourceFileName);
+             } catch (Exception e) {
+                 logger.warn("建立或確認父部門鏈失敗 (parentCode={}): {}", parentDeptCode, e.getMessage(), e);
+                 insertErrorLog("DEPARTMENT", depCode, hrData, e, sourceFileName);
+             }
+         }
+         String code = fullDeptName.trim(); // keep full dept string as unique code
 
-        logger.debug("處理部門(完整名稱): {} -> 短名: {}, 代碼: {}, 父代碼: {}, 層級: {}", fullDeptName, shortName, code, parentDeptCode, treeLevel);
+         logger.debug("處理部門(完整名稱): {} -> 短名: {}, 代碼: {}, 父代碼: {}, 層級: {}", fullDeptName, shortName, code, parentDeptCode, treeLevel);
 
         // 檢查部門是否存在（以 code 為唯一鍵）
         String checkSql = "SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?";
@@ -306,6 +350,8 @@ public class HRDataProcessService {
                 insertOrUpdateTsDepartment(dept);
             } catch (Exception e) {
                 logger.error("同步到 TsDepartment 失敗 (code={}): {}", code, e.getMessage(), e);
+                // log error into error table with department details
+                insertErrorLog("DEPARTMENT", depCode, hrData, e, sourceFileName);
             }
         }
     }
@@ -388,7 +434,7 @@ public class HRDataProcessService {
         logger.info("TsDepartment 同步: {} ({}) 完成, FParentId: {}", dept.getName(), dept.getCode(), parentFId);
     }
 
-    private void processEmployees(List<HRData> hrDataList) {
+    private void processEmployees(List<HRData> hrDataList, String sourceFileName) {
         logger.info("開始處理員工資料，共 {} 筆記錄", hrDataList.size());
         
         int successCount = 0;
@@ -396,24 +442,27 @@ public class HRDataProcessService {
         
         for (HRData hrData : hrDataList) {
             try {
-                processSingleEmployee(hrData);
+                processSingleEmployee(hrData, sourceFileName);
                 successCount++;
             } catch (Exception e) {
                 logger.error("處理員工資料失敗: {} ({})", 
                     hrData.getEmpName(), hrData.getWorkcard(), e);
                 errorCount++;
+                // insert error log with employee details
+                insertErrorLog("EMPLOYEE", hrData.getWorkcard(), hrData, e, sourceFileName);
             }
         }
         
         logger.info("員工資料處理完成: 成功 {} 筆, 失敗 {} 筆", successCount, errorCount);
     }
     
-    private void processSingleEmployee(HRData hrData) {
+    private void processSingleEmployee(HRData hrData, String sourceFileName) {
         String workcard = hrData.getWorkcard();
         String empName = hrData.getEmpName();
         String mobile = hrData.getMobile();
         String depCode = hrData.getDepCode();
         String depName = hrData.getDepName();
+        String depNo = hrData.getDepNo();
 
         if (workcard == null || workcard.trim().isEmpty()) {
             logger.warn("員工編號為空，跳過處理。員工姓名: {}", empName);
@@ -427,23 +476,49 @@ public class HRDataProcessService {
             String checkAccountSql = "SELECT COUNT(*) FROM TsAccount WHERE FLoginName = ?";
             Integer accountCount = jdbcTemplate.queryForObject(checkAccountSql, Integer.class, workcard);
             
-            // 取得部門ID
-            String deptIdSql = "SELECT id FROM CUS_HRImport_Department WHERE dep_code = ?";
-            List<UUID> departmentIds = jdbcTemplate.queryForList(deptIdSql, UUID.class, depCode);
-            UUID departmentId = departmentIds.isEmpty() ? null : departmentIds.get(0);
-            
-            if (departmentId == null) {
-                logger.error("找不到對應的部門: {}", depCode);
-                //throw new RuntimeException("部門不存在: " + depCode);
+            // 取得部門ID — use dep_no to avoid ambiguity when multiple departments share the same dep_code
+            String deptIdSql = "SELECT id FROM CUS_HRImport_Department WHERE dep_no = ?";
+            List<UUID> departmentIds = jdbcTemplate.queryForList(deptIdSql, UUID.class, depNo);
+            UUID departmentId = null;
+            if (departmentIds == null || departmentIds.isEmpty()) {
+                departmentId = null;
+            } else {
+                departmentId = departmentIds.get(0);
+                if (departmentIds.size() > 1) {
+                    logger.warn("dep_no={} 對應多筆 CUS_HRImport_Department id，使用第一筆 id={}", depNo, departmentId);
+                    insertErrorLog("EMPLOYEE", workcard, hrData,
+                            new RuntimeException("Multiple CUS_HRImport_Department rows for dep_no=" + depNo),
+                            sourceFileName);
+                }
             }
-            
-            // 取得部門層級
-            String levelSql = "SELECT tree_level FROM CUS_HRImport_Department WHERE dep_code = ?";
+
+            if (departmentId == null) {
+                logger.error("找不到對應的部門 dep_no={}", depNo);
+                // record error; optionally continue or throw depending on business needs
+                insertErrorLog("EMPLOYEE", workcard, hrData,
+                        new RuntimeException("Department not found for dep_no=" + depNo),
+                        sourceFileName);
+            }
+
+            // 取得部門層級，使用 dep_no 作為查詢鍵
+            String levelSql = "SELECT tree_level FROM CUS_HRImport_Department WHERE dep_no = ?";
             Integer treeLevel = null;
             try {
-                treeLevel = jdbcTemplate.queryForObject(levelSql, Integer.class, depCode);
-            } catch (EmptyResultDataAccessException ex) {
-                logger.warn("查不到部門層級 (code={})，預設為NULL", depCode);
+                List<Integer> levels = jdbcTemplate.queryForList(levelSql, Integer.class, depNo);
+                if (levels == null || levels.isEmpty()) {
+                    treeLevel = null;
+                } else {
+                    if (levels.size() > 1) {
+                        logger.warn("dep_no={} 對應多筆 tree_level，使用第一筆: {}", depNo, levels.get(0));
+                        insertErrorLog("EMPLOYEE", workcard, hrData,
+                                new RuntimeException("Multiple tree_level rows for dep_no=" + depNo),
+                                sourceFileName);
+                    }
+                    treeLevel = levels.get(0);
+                }
+            } catch (Exception ex) {
+                logger.warn("查詢部門層級時發生例外 (dep_no={})，預設為NULL: {}", depNo, ex.getMessage());
+                treeLevel = null;
             }
 
             if (accountCount == 0) {
@@ -456,6 +531,8 @@ public class HRDataProcessService {
             
         } catch (Exception e) {
             logger.error("處理員工資料失敗: {} ({})", empName, workcard, e);
+            // log error with file name
+            insertErrorLog("EMPLOYEE", workcard, hrData, e, sourceFileName);
             throw new RuntimeException("員工處理失敗", e);
         }
     }
@@ -470,16 +547,16 @@ public class HRDataProcessService {
                 "FCreateTime, FEnabled, FLanguage) VALUES (?, ?, ?, ?, ?, ?, GETDATE(), 1, 'zh-TW')";
         
         jdbcTemplate.update(accountSql, accountId, hrData.getEmpName(), hrData.getWorkcard(), 
-                "default_password", "", hrData.getMobile());
-        
+                defaultPassword, "", hrData.getMobile());
+
         // 插入TsUser
         String userSql = "INSERT INTO TsUser (FId, FName, FLoginName, FPassword, FDepartmentId, " +
                 "FMobile, FEmail, FEnabled, FOnGuard, FLanguage, FUserNo) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 'zh-TW', ?)";
         
         jdbcTemplate.update(userSql, employeeId, hrData.getEmpName(), hrData.getWorkcard(), 
-                "default_password", departmentId, hrData.getMobile(), "", hrData.getWorkcard());
-        
+                defaultPassword, departmentId, hrData.getMobile(), "", hrData.getWorkcard());
+
         // 插入TsAccountIdentity
         String identitySql = "INSERT INTO TsAccountIdentity (FId, FName, FAccountId, FIdentityTypeId, " +
                 "FEntityId, FDefault, FIndex) VALUES (?, ?, ?, NULL, ?, 1, 0)";
@@ -549,5 +626,202 @@ public class HRDataProcessService {
             logger.warn("將檔案複製到 archive 時發生錯誤（不重試）: {}", filePath, e);
         }
     }
-}
 
+    private static int countDashes(String s) {
+        if (s == null) return 0;
+        String trimmed = s.trim();
+        if (trimmed.isEmpty()) return 0;
+        int cnt = 0;
+        for (int i = 0; i < trimmed.length(); i++) {
+            if (trimmed.charAt(i) == '-') cnt++;
+        }
+        return cnt;
+    }
+
+    /**
+     * Insert an error record into CUS_HRImport_Error_Log
+     * @param recordType DEPARTMENT | EMPLOYEE | RAW
+     * @param recordKey dep_code or workcard
+     * @param hrData the HRData object to persist (will be stringified)
+     * @param ex the exception
+     * @param fileName optional source file name
+     */
+    private void insertErrorLog(String recordType, String recordKey, HRData hrData, Exception ex, String fileName) {
+        try {
+            // store processed_at as Taipei local time (UTC+8) regardless of DB server timezone
+            String insertSql = "INSERT INTO CUS_HRImport_Error_Log (id, file_name, record_type, record_key, payload, error_message, stack_trace, processed_at, created_by) " +
+                    "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, CONVERT(datetime2, SWITCHOFFSET(SYSUTCDATETIME() AT TIME ZONE 'UTC', '+08:00')), ?)";
+
+            String payload = hrData == null ? null : hrData.toString();
+            String errMsg = ex == null ? "" : ex.getMessage();
+            String stack = null;
+            if (ex != null) {
+                StringWriter sw = new StringWriter();
+                ex.printStackTrace(new PrintWriter(sw));
+                stack = sw.toString();
+            }
+
+            jdbcTemplate.update(insertSql,
+                    fileName,              // file_name
+                    recordType,            // record_type
+                    recordKey,             // record_key
+                    payload,               // payload
+                    errMsg,                // error_message
+                    stack,                 // stack_trace
+                    "hr-import-service"   // created_by
+            );
+        } catch (Exception logEx) {
+            logger.error("寫入 CUS_HRImport_Error_Log 失敗: {}", logEx.getMessage(), logEx);
+        }
+    }
+
+    /**
+     * Ensure predefined parent departments exist in CUS_HRImport_Department and TsDepartment.
+     * Adds entries required so CSV children can resolve their parent departments.
+     */
+    private void ensureDefaultParentDepartments(String sourceFileName) {
+        // Entries: {code, parentCode, treeLevel}
+        final String[][] defs = new String[][]{
+                {"總經理", null, "2"},
+                {"營運規劃處", null, "2"},
+                {"董事長", null, "2"},
+                // intermediate department under 總經理 so children like
+                // '總經理直轄-法令遵循部-法令遵循二科' can find parent '總經理直轄-法令遵循部'
+                {"總經理直轄-法令遵循部", "總經理", "3"}
+        };
+
+        for (String[] def : defs) {
+            final String code = def[0].trim();
+            final String parentCode = def[1] == null ? null : def[1].trim();
+            final int treeLevel = Integer.parseInt(def[2]);
+            try {
+                String checkSql = "SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?";
+                Integer cnt = jdbcTemplate.queryForObject(checkSql, Integer.class, code);
+                if (cnt == null || cnt == 0) {
+                    String insertSql = "INSERT INTO CUS_HRImport_Department " +
+                            "(id, cpynid, dep_no, dep_code, name, full_name, code, manager, parent_code, description, tree_level) " +
+                            "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    jdbcTemplate.update(insertSql,
+                            null, // cpynid
+                            null, // dep_no
+                            null, // dep_code
+                            code, // name
+                            code, // full_name
+                            code, // code
+                            "系統管理員", // manager
+                            parentCode, // parent_code
+                            null, // description
+                            treeLevel // tree_level
+                    );
+                    logger.info("已建立預設部門 (CUS): {} (parent={})", code, parentCode);
+
+                    // fetch id and sync to TsDepartment
+                    try {
+                        UUID cusId = jdbcTemplate.queryForObject("SELECT id FROM CUS_HRImport_Department WHERE code = ?", UUID.class, code);
+                        if (cusId != null) {
+                            Department dept = new Department();
+                            dept.setId(cusId);
+                            dept.setCpynid(null);
+                            dept.setDep_no(null);
+                            dept.setDep_code(null);
+                            dept.setName(code);
+                            dept.setFullName(code);
+                            dept.setCode(code);
+                            dept.setManager("系統管理員");
+                            dept.setParentCode(parentCode);
+                            dept.setDescription(null);
+                            dept.setTreeLevel(treeLevel);
+                            try {
+                                insertOrUpdateTsDepartment(dept);
+                                logger.info("已同步預設部門到 TsDepartment: {}", code);
+                            } catch (Exception e) {
+                                logger.warn("同步預設部門到 TsDepartment 失敗: {}", code, e);
+                                insertErrorLog("DEPARTMENT", code, null, e, sourceFileName);
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.warn("建立後查詢預設部門 id 失敗: {}", code, e);
+                        insertErrorLog("DEPARTMENT", code, null, e, sourceFileName);
+                    }
+                }
+            } catch (Exception e) {
+                logger.error("檢查或建立預設部門失敗: {}", code, e);
+                insertErrorLog("DEPARTMENT", code, null, e, sourceFileName);
+            }
+        }
+    }
+
+    /**
+     * Ensure the parent department chain exists in CUS_HRImport_Department.
+     * If a parent (by full code) is missing, this will recursively create its parent first,
+     * then insert the missing parent and synchronize to TsDepartment.
+     */
+    private void ensureParentChain(String parentCode, String sourceFileName) {
+        if (parentCode == null || parentCode.trim().isEmpty()) return;
+        String code = parentCode.trim();
+        try {
+            Integer cnt = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?", Integer.class, code);
+            if (cnt != null && cnt > 0) return; // already exists
+        } catch (Exception e) {
+            logger.warn("檢查父部門是否存在時發生例外: {}", e.getMessage(), e);
+        }
+
+        // determine parent-of-parent
+        String[] parts = code.split("-");
+        String parentOfParent = (parts.length > 1) ? String.join("-", Arrays.copyOf(parts, parts.length - 1)) : null;
+        // recursively ensure higher-level parent exists first
+        if (parentOfParent != null && !parentOfParent.trim().isEmpty()) {
+            ensureParentChain(parentOfParent, sourceFileName);
+        }
+
+        // compute tree level and short name
+        int treeLevel = parts.length + 1;
+        String shortName = parts[parts.length - 1].trim();
+
+        // insert parent record into CUS_HRImport_Department
+        try {
+            String insertSql = "INSERT INTO CUS_HRImport_Department " +
+                    "(id, cpynid, dep_no, dep_code, name, full_name, code, manager, parent_code, description, tree_level) " +
+                    "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.update(insertSql,
+                    null, // cpynid
+                    null, // dep_no
+                    null, // dep_code
+                    shortName, // name
+                    code, // full_name
+                    code, // code
+                    "系統管理員", // manager
+                    parentOfParent, // parent_code
+                    null, // description
+                    treeLevel // tree_level
+            );
+            logger.info("自動建立父部門: {} (parent={})", code, parentOfParent);
+
+            // sync to TsDepartment
+            try {
+                UUID cusId = jdbcTemplate.queryForObject("SELECT id FROM CUS_HRImport_Department WHERE code = ?", UUID.class, code);
+                if (cusId != null) {
+                    Department dept = new Department();
+                    dept.setId(cusId);
+                    dept.setCpynid(null);
+                    dept.setDep_no(null);
+                    dept.setDep_code(null);
+                    dept.setName(shortName);
+                    dept.setFullName(code);
+                    dept.setCode(code);
+                    dept.setManager("系統管理員");
+                    dept.setParentCode(parentOfParent);
+                    dept.setDescription(null);
+                    dept.setTreeLevel(treeLevel);
+                    insertOrUpdateTsDepartment(dept);
+                }
+            } catch (Exception e) {
+                logger.warn("自動建立父部門後同步 TsDepartment 失敗: {}", code, e);
+                insertErrorLog("DEPARTMENT", code, null, e, sourceFileName);
+            }
+        } catch (Exception e) {
+            logger.warn("建立父部門失敗: {}", code, e);
+            insertErrorLog("DEPARTMENT", code, null, e, sourceFileName);
+        }
+    }
+}
