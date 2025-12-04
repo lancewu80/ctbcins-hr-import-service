@@ -34,6 +34,9 @@ app:
     enabled-states: A
     disabled-states: C,B,D,E
   default-password: "default_password_reset"
+  ts:
+    # starting FTreeSerial for level-2 generation. Example: 001.001 -> level2 starts from 001.001
+    start-ftreeserial: "001.001"
 
 logging:
   level:

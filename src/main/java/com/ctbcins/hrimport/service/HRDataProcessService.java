@@ -58,6 +58,9 @@ public class HRDataProcessService {
     @Value("${app.default-password:no_default_password}")
     private String defaultPassword;
 
+    @Value("${app.ts.start-ftreeserial:001.001}")
+    private String startFTreeSerial;
+
     private static final DateTimeFormatter CSV_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     @Transactional
@@ -228,35 +231,82 @@ public class HRDataProcessService {
     }
 
     private void processDepartments(List<HRData> hrDataList, String sourceFileName) {
-        logger.info("開始處理部門資料，共 {} 筆記錄", hrDataList.size());
+         logger.info("開始處理部門資料，共 {} 筆記錄", hrDataList.size());
 
-        // Ensure three predefined level-2 parent departments exist (they are not present in CSV)
-        ensureDefaultParentDepartments(sourceFileName);
+         // Ensure three predefined level-2 parent departments exist (they are not present in CSV)
+         ensureDefaultParentDepartments(sourceFileName);
 
-        // Build unique list of full DEP_NAME values from CSV (avoid creating parent-only entries)
-        List<HRData> uniqueDeptList = hrDataList.stream()
-                .filter(d -> d.getDepName() != null && !d.getDepName().trim().isEmpty())
-                .collect(Collectors.toMap(HRData::getDepName, d -> d, (a, b) -> a))
-                .values().stream()
-                // sort by hierarchy depth: fewer '-' means higher level (parents first), then by name
-                .sorted(Comparator
-                        .comparingInt((HRData h) -> countDashes(h.getDepName()))
-                        .thenComparing(h -> Optional.ofNullable(h.getDepName()).orElse("")))
+         // Build unique list of full DEP_NAME values from CSV (avoid creating parent-only entries)
+         List<HRData> uniqueDeptList = hrDataList.stream()
+                 .filter(d -> d.getDepName() != null && !d.getDepName().trim().isEmpty())
+                 .collect(Collectors.toMap(HRData::getDepName, d -> d, (a, b) -> a))
+                 .values().stream()
+                 // sort by hierarchy depth: fewer '-' means higher level (parents first), then by name
+                 .sorted(Comparator
+                         .comparingInt((HRData h) -> countDashes(h.getDepName()))
+                         .thenComparing(h -> Optional.ofNullable(h.getDepName()).orElse("")))
+                 .collect(Collectors.toList());
+
+         logger.info("需要處理的部門數量 (依完整 DEP_NAME): {}", uniqueDeptList.size());
+
+         for (HRData sampleData : uniqueDeptList) {
+             try {
+                // skip if department is considered obsolete according to CSV data
+                if (isDepartmentObsolete(sampleData.getDepName(), hrDataList)) {
+                    logger.info("部門已標記為廢止，跳過: {}", sampleData.getDepName());
+                    continue;
+                }
+                 processSingleDepartment(sampleData, sourceFileName);
+             } catch (Exception e) {
+                 logger.error("處理部門失敗: {} - {}", sampleData.getDepCode(), sampleData.getDepName(), e);
+                 // persist error log
+                 insertErrorLog("DEPARTMENT", sampleData.getDepCode(), sampleData, e, sourceFileName);
+             }
+         }
+     }
+
+    /**
+     * 判斷該部門是否已廢止 (根據 CSV 原始資料)
+     * 邏輯對應原始 Python:
+     * 1) 若 CSV 中完全沒有該部門的任何記錄 => 視為廢止 (不存在)
+     * 2) 若該部門沒有任何在職人員 (STATE_NAME == '在職')，且其 DEP_NO 或 DEP_CODE 已被其他部門沿用且該部門有在職人員 => 視為廢止
+     */
+    private boolean isDepartmentObsolete(String deptName, List<HRData> csvData) {
+        if (deptName == null || deptName.trim().isEmpty()) return true;
+        String target = deptName.trim();
+
+        // 找出該部門的所有記錄
+        List<HRData> deptRecords = csvData.stream()
+                .filter(r -> r.getDepName() != null && r.getDepName().trim().equals(target))
                 .collect(Collectors.toList());
 
-        logger.info("需要處理的部門數量 (依完整 DEP_NAME): {}", uniqueDeptList.size());
-
-        for (HRData sampleData : uniqueDeptList) {
-            try {
-                processSingleDepartment(sampleData, sourceFileName);
-            } catch (Exception e) {
-                logger.error("處理部門失敗: {} - {}", sampleData.getDepCode(), sampleData.getDepName(), e);
-                // persist error log
-                insertErrorLog("DEPARTMENT", sampleData.getDepCode(), sampleData, e, sourceFileName);
-            }
+        if (deptRecords.isEmpty()) {
+            // CSV 中沒有任何該部門的記錄 -> 視為不存在/廢止
+            return true;
         }
+
+        // 檢查是否有在職人員
+        boolean hasActive = deptRecords.stream()
+                .anyMatch(r -> r.getStateName() != null && r.getStateName().trim().equals("在職"));
+        if (hasActive) return false; // 有在職人員 -> 仍在運作
+
+        // 無在職人員，檢查是否有其他部門使用相同的 DEP_NO 或 DEP_CODE 且有在職人員
+        String depNo = deptRecords.get(0).getDepNo();
+        String depCode = deptRecords.get(0).getDepCode();
+
+        boolean otherUsesSame = csvData.stream()
+                .filter(r -> r.getDepName() != null && !r.getDepName().trim().equals(target))
+                .filter(r -> r.getStateName() != null && r.getStateName().trim().equals("在職"))
+                .anyMatch(r -> (depNo != null && depNo.equals(r.getDepNo())) || (depCode != null && depCode.equals(r.getDepCode())));
+
+        if (otherUsesSame) {
+            // 編號被其他部門沿用且該部門有在職人員 -> 原部門應視為廢止
+            return true;
+        }
+
+        return false; // 預設為未廢止
     }
-    
+
     private void processSingleDepartment(HRData hrData, String sourceFileName) {
          String fullDeptName = hrData.getDepName();
          String depCode = hrData.getDepCode();
@@ -373,20 +423,24 @@ public class HRDataProcessService {
 
         // Step 1: 查找 FParentId (父部門的 FId)
         UUID parentFId = null;
+        String parentCode = dept.getParentCode();
         if (dept.getTreeLevel() != null && dept.getTreeLevel() == 2) {
             // tree level 2 => top-level department, map to provided root GUID
             parentFId = UUID.fromString("00000000-0000-0000-1001-000000000001");
-        } else if (dept.getParentCode() != null && !dept.getParentCode().isEmpty()) {
+        } else if (parentCode != null && !parentCode.isEmpty()) {
             try {
                 String parentIdSql = "SELECT id FROM CUS_HRImport_Department WHERE code = ?";
-                parentFId = jdbcTemplate.queryForObject(parentIdSql, UUID.class, dept.getParentCode());
+                parentFId = jdbcTemplate.queryForObject(parentIdSql, UUID.class, parentCode);
             } catch (EmptyResultDataAccessException e) {
-                logger.warn("未找到父部門 (code={}) 的 CUS id，FParentId 設為 NULL。", dept.getParentCode());
+                logger.warn("未找到父部門 (code={}) 的 CUS id，FParentId 設為 NULL。", parentCode);
                 parentFId = null;
             } catch (Exception e) {
-                logger.error("查找父部門FId時發生錯誤，Code: {}", dept.getParentCode(), e);
+                logger.error("查找父部門FId時發生錯誤，Code: {}", parentCode, e);
             }
         }
+
+        // compute FTreeSerial based on configured start and parent chain
+        String fTreeSerial = computeFTreeSerial(dept);
 
         // Step 2: 使用 MERGE INTO 插入或更新 TsDepartment
         // TsDepartment 欄位: FId, FParentId, FIndex, FTreeLevel, FTreeSerial, FName, FFullName, FShortCode, FDescription
@@ -426,12 +480,192 @@ public class HRDataProcessService {
                 dept.getFullName(),           // FFullName
                 dept.getDep_code(),           // FShortCode (mapped from dep_code)
                 dept.getDescription(),        // FDescription
-                dept.getCode(),               // FTreeSerial (使用 Code)
+                fTreeSerial,                  // FTreeSerial (computed)
                 fixedUserId,                  // set FUserId on update
                 fixedUserId                   // set FUserId on insert
         );
 
-        logger.info("TsDepartment 同步: {} ({}) 完成, FParentId: {}", dept.getName(), dept.getCode(), parentFId);
+        logger.info("TsDepartment 同步: {} ({}) 完成, FParentId: {}, FTreeSerial: {}", dept.getName(), dept.getCode(), parentFId, fTreeSerial);
+    }
+
+// 修正 computeFTreeSerial 方法，確保父子部門序號一致性
+
+    /**
+     * Compute FTreeSerial for a department based on configured starting serial and parent chain.
+     * Rules:
+     * - Root group exists as 001 (treeLevel=1) in DB.
+     * - Level-2 serials extend root: 001.001, 001.002, ... starting from configured start (startFTreeSerial)
+     * - Level-3: 001.001.001, 001.001.002, ... and so on.
+     *
+     * IMPORTANT: For level-2 departments, check if child departments already exist.
+     * If children exist, derive the parent's serial from the child's serial to maintain consistency.
+     */
+    private String computeFTreeSerial(Department dept) {
+        String code = dept.getCode();
+        Integer level = dept.getTreeLevel() == null ? 1 : dept.getTreeLevel();
+
+        // if level == 1, return the base "001"
+        if (level == 1) return "001";
+
+        // get configured start suffix (e.g., startFTreeSerial = "001.001")
+        String start = (startFTreeSerial == null) ? "001.001" : startFTreeSerial;
+        int startSuffixNum = 1;
+        if (start.contains(".")) {
+            String sfx = start.substring(start.indexOf('.') + 1);
+            try { startSuffixNum = Integer.parseInt(sfx); } catch (Exception e) { startSuffixNum = 1; }
+        }
+
+        try {
+            if (level == 2) {
+                // PRIORITY 1: Check if this department already has children in TsDepartment
+                // If so, derive parent serial from existing children to maintain consistency
+                String childCheckSql = "SELECT TOP 1 FTreeSerial FROM TsDepartment " +
+                        "WHERE FFullName LIKE ? AND FTreeLevel > 2 " +
+                        "ORDER BY FTreeSerial";
+                try {
+                    // Search for children whose FFullName starts with this department's name
+                    // e.g., if dept.getName() is "總經理", find "總經理直轄-xxx"
+                    String childPattern = dept.getName() + "%";
+                    List<String> childSerials = jdbcTemplate.queryForList(childCheckSql, String.class, childPattern);
+
+                    if (childSerials != null && !childSerials.isEmpty()) {
+                        String childSerial = childSerials.get(0);
+                        // Extract parent serial from child (e.g., "001.001.001" -> "001.001")
+                        String[] segments = childSerial.split("\\.");
+                        if (segments.length >= 2) {
+                            String derivedSerial = segments[0] + "." + segments[1];
+                            logger.info("從現有子部門推導父部門序號: {} -> {} (基於子部門序號: {})",
+                                    dept.getName(), derivedSerial, childSerial);
+                            return derivedSerial;
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.debug("檢查子部門以推導父序號時發生錯誤: {}", e.getMessage());
+                }
+
+                // collect all existing serials that start with '001.' (include deeper nodes)
+                String likePattern = "001.%";
+                String sql = "SELECT FTreeSerial FROM TsDepartment WHERE FTreeSerial LIKE ?";
+                List<String> all = jdbcTemplate.queryForList(sql, String.class, likePattern);
+
+                // build set of used level-2 suffix numbers (from both level-2 rows and deeper rows)
+                Set<Integer> used = new HashSet<>();
+                if (all != null) {
+                    for (String f : all) {
+                        if (f == null) continue;
+                        String[] segs = f.split("\\.");
+                        if (segs.length >= 2) {
+                            try { used.add(Integer.parseInt(segs[1])); } catch (Exception ignore) {}
+                        }
+                    }
+                }
+
+                // PRIORITY 2: find deeper TsDepartment rows whose FFullName tokens indicate they belong under this department
+                Set<Integer> candidateFromName = new HashSet<>();
+                try {
+                    String sqlAll = "SELECT FTreeSerial, FFullName FROM TsDepartment WHERE FTreeSerial LIKE ?";
+                    List<Map<String, Object>> rows = jdbcTemplate.queryForList(sqlAll, likePattern);
+                    if (rows != null) {
+                        for (Map<String, Object> row : rows) {
+                            Object fObj = row.get("FTreeSerial");
+                            Object fullObj = row.get("FFullName");
+                            if (fObj == null || fullObj == null) continue;
+                            String fSerial = fObj.toString();
+                            String fFull = fullObj.toString();
+                            // tokenize full name by '-' and check if any token equals dept.getName
+                            String[] tokens = fFull.split("\\-");
+                            boolean matches = false;
+                            for (String tok : tokens) {
+                                if (tok == null) continue;
+                                if (tok.trim().equals(dept.getName())) { matches = true; break; }
+                                // also accept tokens that start with dept name (e.g., '總經理直轄' startsWith '總經理')
+                                if (tok.trim().startsWith(dept.getName())) { matches = true; break; }
+                            }
+                            if (matches) {
+                                String[] segs = fSerial.split("\\.");
+                                if (segs.length >= 2) {
+                                    try { candidateFromName.add(Integer.parseInt(segs[1])); } catch (Exception ignore) {}
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.debug("搜尋 TsDepartment 以推斷 level-2 前綴失敗: {}", e.getMessage());
+                }
+
+                // If we found candidate suffixes from existing names, prefer the smallest one not already used as a level-2 row
+                if (!candidateFromName.isEmpty()) {
+                    List<Integer> sorted = new ArrayList<>(candidateFromName);
+                    Collections.sort(sorted);
+                    for (Integer cand : sorted) {
+                        try {
+                            String serial = String.format("001.%03d", cand);
+                            Integer cntLevel2 = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM TsDepartment WHERE FTreeSerial = ? AND FTreeLevel = 2", Integer.class, serial);
+                            if (cntLevel2 == null || cntLevel2 == 0) {
+                                logger.info("從名稱推導父部門序號: {} -> {}", dept.getName(), serial);
+                                return serial;
+                            }
+                        } catch (Exception ex) {
+                            // ignore and continue
+                        }
+                    }
+                    // If all candidates already have level-2 rows, fall through to normal allocation
+                }
+
+                // PRIORITY 3: find the first available suffix >= startSuffixNum
+                int candidate = startSuffixNum;
+                while (candidate < 1000000) {
+                    if (!used.contains(candidate)) {
+                        String serial = String.format("001.%03d", candidate);
+                        logger.info("分配新的父部門序號: {} -> {}", dept.getName(), serial);
+                        return serial;
+                    }
+                    candidate++;
+                }
+
+                // fallback: return start
+                return String.format("001.%03d", startSuffixNum);
+            } else {
+                // level >=3: build parent FTreeSerial and then append next suffix
+                String parentCodeFull = dept.getParentCode();
+                if (parentCodeFull == null) {
+                    // fallback
+                    return "001";
+                }
+                UUID parentCusId = jdbcTemplate.queryForObject("SELECT id FROM CUS_HRImport_Department WHERE code = ?", UUID.class, parentCodeFull);
+                String parentFTree = jdbcTemplate.queryForObject("SELECT FTreeSerial FROM TsDepartment WHERE FId = ?", String.class, parentCusId);
+                if (parentFTree == null) parentFTree = "001";
+
+                // lookup existing children under parentFTree (children will have prefix parentFTree+'.%')
+                String likePattern = parentFTree + ".%";
+                String sql = "SELECT FTreeSerial FROM TsDepartment WHERE FTreeSerial LIKE ?";
+                List<String> existing = jdbcTemplate.queryForList(sql, String.class, likePattern);
+
+                // build set of numeric last-segments among existing children that are direct children of parent
+                Set<Integer> used = new HashSet<>();
+                if (existing != null) {
+                    for (String f : existing) {
+                        if (f == null) continue;
+                        String[] segs = f.split("\\.");
+                        if (segs.length == (parentFTree.split("\\.").length + 1)) {
+                            try { used.add(Integer.parseInt(segs[segs.length - 1])); } catch (Exception ignore) {}
+                        }
+                    }
+                }
+
+                int nextIndex = 1;
+                // find smallest unused >0
+                while (nextIndex < 1000000) {
+                    if (!used.contains(nextIndex)) break;
+                    nextIndex++;
+                }
+
+                return String.format(parentFTree + ".%03d", nextIndex);
+            }
+        } catch (Exception e) {
+            logger.warn("計算 FTreeSerial 發生錯誤，fallback 為 001: {}", e.getMessage());
+            return "001";
+        }
     }
 
     private void processEmployees(List<HRData> hrDataList, String sourceFileName) {
@@ -468,67 +702,67 @@ public class HRDataProcessService {
             logger.warn("員工編號為空，跳過處理。員工姓名: {}", empName);
             return;
         }
-        
+
         logger.debug("處理員工: {} ({})", empName, workcard);
-        
+
         try {
             // 檢查員工帳號是否存在
             String checkAccountSql = "SELECT COUNT(*) FROM TsAccount WHERE FLoginName = ?";
             Integer accountCount = jdbcTemplate.queryForObject(checkAccountSql, Integer.class, workcard);
-            
-            // 取得部門ID — use dep_no to avoid ambiguity when multiple departments share the same dep_code
-            String deptIdSql = "SELECT id FROM CUS_HRImport_Department WHERE dep_no = ?";
-            List<UUID> departmentIds = jdbcTemplate.queryForList(deptIdSql, UUID.class, depNo);
+
+            // 取得部門ID — use dep_code per request
+            String deptIdSql = "SELECT id FROM CUS_HRImport_Department WHERE dep_code = ?";
+            List<UUID> departmentIds = jdbcTemplate.queryForList(deptIdSql, UUID.class, depCode);
+
             UUID departmentId = null;
             if (departmentIds == null || departmentIds.isEmpty()) {
                 departmentId = null;
             } else {
                 departmentId = departmentIds.get(0);
                 if (departmentIds.size() > 1) {
-                    logger.warn("dep_no={} 對應多筆 CUS_HRImport_Department id，使用第一筆 id={}", depNo, departmentId);
+                    logger.warn("dep_code={} 對應多筆 CUS_HRImport_Department id，使用第一筆 id={}", depCode, departmentId);
                     insertErrorLog("EMPLOYEE", workcard, hrData,
-                            new RuntimeException("Multiple CUS_HRImport_Department rows for dep_no=" + depNo),
+                            new RuntimeException("Multiple CUS_HRImport_Department rows for dep_code=" + depCode),
                             sourceFileName);
                 }
             }
 
             if (departmentId == null) {
-                logger.error("找不到對應的部門 dep_no={}", depNo);
-                // record error; optionally continue or throw depending on business needs
+                logger.error("找不到對應的部門 dep_code={}", depCode);
                 insertErrorLog("EMPLOYEE", workcard, hrData,
-                        new RuntimeException("Department not found for dep_no=" + depNo),
+                        new RuntimeException("Department not found for dep_code=" + depCode),
                         sourceFileName);
             }
 
-            // 取得部門層級，使用 dep_no 作為查詢鍵
-            String levelSql = "SELECT tree_level FROM CUS_HRImport_Department WHERE dep_no = ?";
+            // 取得部門層級，使用 dep_code 作為查詢鍵
+            String levelSql = "SELECT tree_level FROM CUS_HRImport_Department WHERE dep_code = ?";
             Integer treeLevel = null;
             try {
-                List<Integer> levels = jdbcTemplate.queryForList(levelSql, Integer.class, depNo);
+                List<Integer> levels = jdbcTemplate.queryForList(levelSql, Integer.class, depCode);
                 if (levels == null || levels.isEmpty()) {
                     treeLevel = null;
                 } else {
                     if (levels.size() > 1) {
-                        logger.warn("dep_no={} 對應多筆 tree_level，使用第一筆: {}", depNo, levels.get(0));
+                        logger.warn("dep_code={} 對應多筆 tree_level，使用第一筆: {}", depCode, levels.get(0));
                         insertErrorLog("EMPLOYEE", workcard, hrData,
-                                new RuntimeException("Multiple tree_level rows for dep_no=" + depNo),
+                                new RuntimeException("Multiple tree_level rows for dep_code=" + depCode),
                                 sourceFileName);
                     }
                     treeLevel = levels.get(0);
                 }
             } catch (Exception ex) {
-                logger.warn("查詢部門層級時發生例外 (dep_no={})，預設為NULL: {}", depNo, ex.getMessage());
+                logger.warn("查詢部門層級時發生例外 (dep_code={})，預設為NULL: {}", depCode, ex.getMessage());
                 treeLevel = null;
             }
 
-            if (accountCount == 0) {
+            if (accountCount == null || accountCount == 0) {
                 // 新增員工
                 createNewEmployee(hrData, departmentId);
             } else {
                 // 更新員工 - 根據層級決定是否更新部門
                 updateEmployee(hrData, departmentId, treeLevel);
             }
-            
+
         } catch (Exception e) {
             logger.error("處理員工資料失敗: {} ({})", empName, workcard, e);
             // log error with file name
