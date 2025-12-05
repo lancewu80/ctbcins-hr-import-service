@@ -33,10 +33,12 @@ app:
   processing:
     enabled-states: A
     disabled-states: C,B,D,E
-  default-password: "default_password_reset"
+  default-password: "angdndfpnpoenpaipbflakdaccpjleoppoohpenihhojkbcllalgchbgbiaajoahbibbeggfalaenbpn"
   ts:
     # starting FTreeSerial for level-2 generation. Example: 001.001 -> level2 starts from 001.001
     start-ftreeserial: "001.001"
+  # default FIdentityTypeId to insert into TsAccountIdentity; can be overridden per environment
+  identity-type-id: "564CF69E-76D6-4BAF-B584-6E04C2911DAE"
 
 logging:
   level:

@@ -61,6 +61,9 @@ public class HRDataProcessService {
     @Value("${app.ts.start-ftreeserial:001.001}")
     private String startFTreeSerial;
 
+    @Value("${app.identity-type-id:564CF69E-76D6-4BAF-B584-6E04C2911DAE}")
+    private String defaultIdentityTypeId;
+
     private static final DateTimeFormatter CSV_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     @Transactional
@@ -793,10 +796,12 @@ public class HRDataProcessService {
 
         // 插入TsAccountIdentity
         String identitySql = "INSERT INTO TsAccountIdentity (FId, FName, FAccountId, FIdentityTypeId, " +
-                "FEntityId, FDefault, FIndex) VALUES (?, ?, ?, NULL, ?, 1, 0)";
-        
-        jdbcTemplate.update(identitySql, identityId, hrData.getEmpName(), accountId, employeeId);
-        
+                "FEntityId, FDefault, FIndex) VALUES (?, ?, ?, ?, ?, 1, 0)";
+
+        // use configured identity type id (string) to insert into FIdentityTypeId
+        String identityType = defaultIdentityTypeId;
+        jdbcTemplate.update(identitySql, identityId, hrData.getEmpName(), accountId, identityType, employeeId);
+
         logger.info("新增員工: {} ({})", hrData.getEmpName(), hrData.getWorkcard());
     }
     
