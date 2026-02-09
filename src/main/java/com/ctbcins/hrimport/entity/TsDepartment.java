@@ -1,18 +1,18 @@
 package com.ctbcins.hrimport.entity;
 
 import javax.persistence.*;
-import java.util.UUID;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "TsDepartment")
 public class TsDepartment {
 
     @Id
-    @Column(name = "FId", columnDefinition = "uniqueidentifier")
-    private UUID FId;
+    @Column(name = "FId", length = 36)
+    private String FId;
 
-    @Column(name = "FParentId", columnDefinition = "uniqueidentifier")
-    private UUID FParentId;
+    @Column(name = "FParentId", length = 36)
+    private String FParentId;
 
     @Column(name = "FIndex")
     private Integer FIndex;
@@ -20,51 +20,52 @@ public class TsDepartment {
     @Column(name = "FTreeLevel")
     private Integer FTreeLevel;
 
-    @Column(name = "FTreeSerial", length = 100, columnDefinition = "nvarchar(100)")
+    @Column(name = "FTreeSerial", length = 100)
     private String FTreeSerial;
 
-    @Column(name = "FName", length = 50, columnDefinition = "nvarchar(50)")
+    @Column(name = "FName", length = 50)
     private String FName;
 
-    @Column(name = "FFullName", length = 100, columnDefinition = "nvarchar(100)")
+    @Column(name = "FFullName", length = 100)
     private String FFullName;
 
-    @Column(name = "FShortCode", length = 50, columnDefinition = "nvarchar(50)")
+    @Column(name = "FShortCode", length = 50)
     private String FShortCode;
 
-    @Column(name = "FUserId", columnDefinition = "uniqueidentifier")
-    private UUID FUserId;
+    @Column(name = "FUserId", length = 36)
+    private String FUserId;
 
+    // Database stores these as numeric; map as BigDecimal to match Postgres NUMERIC
     @Column(name = "FEnabled")
-    private Boolean FEnabled = true; // table default ((1))
+    private BigDecimal FEnabled = BigDecimal.ONE; // default 1
 
     @Column(name = "FIsCompany")
-    private Boolean FIsCompany = false; // table default ((0))
+    private BigDecimal FIsCompany = BigDecimal.ZERO; // default 0
 
-    @Column(name = "FDescription", length = 500, columnDefinition = "nvarchar(500)")
+    @Column(name = "FDescription", length = 500)
     private String FDescription;
 
     @Column(name = "FIsServices")
-    private Boolean FIsServices;
+    private BigDecimal FIsServices;
 
     @Column(name = "FIsSales")
-    private Boolean FIsSales;
+    private BigDecimal FIsSales;
 
     // getters & setters
 
-    public UUID getFId() {
+    public String getFId() {
         return FId;
     }
 
-    public void setFId(UUID fId) {
+    public void setFId(String fId) {
         FId = fId;
     }
 
-    public UUID getFParentId() {
+    public String getFParentId() {
         return FParentId;
     }
 
-    public void setFParentId(UUID fParentId) {
+    public void setFParentId(String fParentId) {
         FParentId = fParentId;
     }
 
@@ -116,28 +117,29 @@ public class TsDepartment {
         this.FShortCode = FShortCode;
     }
 
-    public UUID getFUserId() {
+    public String getFUserId() {
         return FUserId;
     }
 
-    public void setFUserId(UUID FUserId) {
+    public void setFUserId(String FUserId) {
         this.FUserId = FUserId;
     }
 
+    // Keep public getter/setter signatures as Boolean for compatibility, but convert to/from BigDecimal for DB mapping
     public Boolean getFEnabled() {
-        return FEnabled;
+        return FEnabled != null && FEnabled.intValue() != 0;
     }
 
     public void setFEnabled(Boolean FEnabled) {
-        this.FEnabled = FEnabled;
+        this.FEnabled = (FEnabled == null) ? null : (FEnabled ? BigDecimal.ONE : BigDecimal.ZERO);
     }
 
     public Boolean getFIsCompany() {
-        return FIsCompany;
+        return FIsCompany != null && FIsCompany.intValue() != 0;
     }
 
     public void setFIsCompany(Boolean FIsCompany) {
-        this.FIsCompany = FIsCompany;
+        this.FIsCompany = (FIsCompany == null) ? null : (FIsCompany ? BigDecimal.ONE : BigDecimal.ZERO);
     }
 
     public String getFDescription() {
@@ -149,18 +151,18 @@ public class TsDepartment {
     }
 
     public Boolean getFIsServices() {
-        return FIsServices;
+        return FIsServices != null && FIsServices.intValue() != 0;
     }
 
     public void setFIsServices(Boolean FIsServices) {
-        this.FIsServices = FIsServices;
+        this.FIsServices = (FIsServices == null) ? null : (FIsServices ? BigDecimal.ONE : BigDecimal.ZERO);
     }
 
     public Boolean getFIsSales() {
-        return FIsSales;
+        return FIsSales != null && FIsSales.intValue() != 0;
     }
 
     public void setFIsSales(Boolean FIsSales) {
-        this.FIsSales = FIsSales;
+        this.FIsSales = (FIsSales == null) ? null : (FIsSales ? BigDecimal.ONE : BigDecimal.ZERO);
     }
 }

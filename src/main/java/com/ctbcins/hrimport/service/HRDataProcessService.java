@@ -48,7 +48,10 @@ public class HRDataProcessService {
     
     @Autowired
     private JdbcTemplate jdbcTemplate;
-    
+
+    @Autowired
+    private ErrorLogService errorLogService;
+
     @Value("${app.processing.enabled-states:A}")
     private String enabledStates;
 
@@ -63,6 +66,10 @@ public class HRDataProcessService {
 
     @Value("${app.identity-type-id:564CF69E-76D6-4BAF-B584-6E04C2911DAE}")
     private String defaultIdentityTypeId;
+
+    // 可在 application.yml 設定: app.tree-label-update-dep，預設值為 4
+    @Value("${app.tree-label-update-dep:4}")
+    private Integer treeLabelUpdateDep;
 
     private static final DateTimeFormatter CSV_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -103,7 +110,6 @@ public class HRDataProcessService {
             List<HRData> validData = hrDataList.stream()
                     .filter(data -> data.getDepCode() != null && !data.getDepCode().trim().isEmpty())
                     .filter(data -> data.getEmpName() != null && !data.getEmpName().trim().isEmpty())
-                    .filter(data -> enabledStates.contains(data.getStateNo()))
                     // sort by number of '-' in depName (no '-' => 0, come first), then by depName string
                     .sorted(Comparator
                             .comparingInt((HRData h) -> countDashes(h.getDepName()))
@@ -153,9 +159,9 @@ public class HRDataProcessService {
 
         final String fileName = Paths.get(filePath).getFileName().toString();
 
-        final String insertSql = "INSERT INTO CUS_HRImport " +
-                "(id, cpnyid, dep_no, dep_code, dep_name, state_no, state_name, emp_id, emp_name, workcard, inadate, quitdate, stop_w, start_w, mdate, position_name, mobile, title_name, workplace_name, file_name) " +
-                "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        final String insertSql = "INSERT INTO public.\"CUS_HRImport\" " +
+                "(cpnyid, dep_no, dep_code, dep_name, state_no, state_name, emp_id, emp_name, workcard, inadate, quitdate, stop_w, start_w, mdate, position_name, mobile, title_name, workplace_name, file_name) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         try {
             jdbcTemplate.batchUpdate(insertSql, new BatchPreparedStatementSetter() {
@@ -239,11 +245,39 @@ public class HRDataProcessService {
          // Ensure three predefined level-2 parent departments exist (they are not present in CSV)
          ensureDefaultParentDepartments(sourceFileName);
 
-         // Build unique list of full DEP_NAME values from CSV (avoid creating parent-only entries)
-         List<HRData> uniqueDeptList = hrDataList.stream()
-                 .filter(d -> d.getDepName() != null && !d.getDepName().trim().isEmpty())
-                 .collect(Collectors.toMap(HRData::getDepName, d -> d, (a, b) -> a))
-                 .values().stream()
+         // Build a unique map of full DEP_NAME values from CSV. Also include special workplace-derived
+         // level-6 entries when DEP_NAME contains 商品處-理賠部-理賠一科- and WORKPLACE_NAME != '總公司'.
+         Map<String, HRData> uniqueMap = new LinkedHashMap<>();
+         for (HRData d : hrDataList) {
+             if (d.getDepName() == null || d.getDepName().trim().isEmpty()) continue;
+             String key = d.getDepName().trim();
+             if (!uniqueMap.containsKey(key)) uniqueMap.put(key, d);
+         }
+
+         // Add workplace-specific (level-6) department entries so they are created/synced before employees
+         for (HRData d : hrDataList) {
+             try {
+                 String dep = d.getDepName();
+                 String wp = d.getWorkplaceName();
+                 if (dep != null && dep.contains("商品處-理賠部-理賠一科-") && wp != null && !wp.trim().isEmpty() && !"總公司".equals(wp.trim())) {
+                     String newFull = dep.trim() + "-" + wp.trim();
+                     if (!uniqueMap.containsKey(newFull)) {
+                         HRData copy = new HRData();
+                         copy.setCpnyId(d.getCpnyId());
+                         copy.setDepNo(d.getDepNo());
+                         copy.setDepCode(d.getDepCode());
+                         copy.setDepName(newFull);
+                         copy.setWorkplaceName(wp.trim());
+                         // keep minimal fields necessary for department creation
+                         uniqueMap.put(newFull, copy);
+                     }
+                 }
+             } catch (Exception ignore) {
+                 // ignore malformed rows
+             }
+         }
+
+         List<HRData> uniqueDeptList = uniqueMap.values().stream()
                  // sort by hierarchy depth: fewer '-' means higher level (parents first), then by name
                  .sorted(Comparator
                          .comparingInt((HRData h) -> countDashes(h.getDepName()))
@@ -316,7 +350,18 @@ public class HRDataProcessService {
          String depNo = hrData.getDepNo();
          String cpnyId = hrData.getCpnyId();
 
-         if (fullDeptName == null || fullDeptName.trim().isEmpty()) {
+        String wp = hrData.getWorkplaceName();
+        if (fullDeptName != null
+                && fullDeptName.contains("商品處-理賠部-理賠一科-")
+                && wp != null
+                && !wp.trim().isEmpty()
+                && !"總公司".equals(wp.trim())) {
+
+            String specificFull = fullDeptName.trim() + "-" + wp.trim();
+            fullDeptName = specificFull;
+
+        }
+            if (fullDeptName == null || fullDeptName.trim().isEmpty()) {
              logger.warn("部門名稱為空，跳過處理。部門代碼: {}", depCode);
              return;
          }
@@ -349,25 +394,26 @@ public class HRDataProcessService {
          logger.debug("處理部門(完整名稱): {} -> 短名: {}, 代碼: {}, 父代碼: {}, 層級: {}", fullDeptName, shortName, code, parentDeptCode, treeLevel);
 
         // 檢查部門是否存在（以 code 為唯一鍵）
-        String checkSql = "SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?";
+        String checkSql = "SELECT COUNT(*) FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?";
         Integer count = jdbcTemplate.queryForObject(checkSql, Integer.class, code);
 
         if (count == null || count == 0) {
             // 新增部門 (name = shortName, full_name = fullDeptName)
-            String insertSql = "INSERT INTO CUS_HRImport_Department " +
-                    "(id, cpynid, dep_no, dep_code, name, full_name, code, manager, parent_code, description, tree_level) " +
-                    "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            String insertSql = "INSERT INTO public.\"CUS_HRImport_Department\" " +
+                    "(\"id\", \"cpynid\", \"dep_no\", \"dep_code\", \"name\", \"full_name\", \"code\", \"manager\", \"parent_code\", \"description\", \"tree_level\") " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
             jdbcTemplate.update(insertSql,
+                    UUID.randomUUID(), // id
                     cpnyId, depNo, depCode, shortName, fullDeptName, code,
                     "系統管理員", parentDeptCode, depNo, treeLevel);
 
             logger.info("新增部門: {} (代碼: {}, 層級: {})", fullDeptName, code, treeLevel);
         } else {
             // 更新部門
-            String updateSql = "UPDATE CUS_HRImport_Department SET cpynid = ?, dep_no = ?, dep_code = ?, name = ?, full_name = ?, " +
-                    "manager = ?, parent_code = ?, description = ?, tree_level = ? " +
-                    "WHERE code = ?";
+            String updateSql = "UPDATE public.\"CUS_HRImport_Department\" SET \"cpynid\" = ?, \"dep_no\" = ?, \"dep_code\" = ?, \"name\" = ?, \"full_name\" = ?, " +
+                    "\"manager\" = ?, \"parent_code\" = ?, \"description\" = ?, \"tree_level\" = ? " +
+                    "WHERE \"code\" = ?";
 
             jdbcTemplate.update(updateSql,
                     cpnyId, depNo, depCode, shortName, fullDeptName, "系統管理員",
@@ -379,7 +425,7 @@ public class HRDataProcessService {
         // 取得或查詢剛剛 insert/update 的 CUS_HRImport_Department.id
         UUID cusId = null;
         try {
-            String idSql = "SELECT id FROM CUS_HRImport_Department WHERE code = ?";
+            String idSql = "SELECT \"id\" FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?";
             cusId = jdbcTemplate.queryForObject(idSql, UUID.class, code);
         } catch (EmptyResultDataAccessException e) {
             logger.warn("未取得 CUS_HRImport_Department id (code={})", code);
@@ -424,6 +470,30 @@ public class HRDataProcessService {
      */
     private void insertOrUpdateTsDepartment(Department dept) {
 
+        // If a TsDepartment already exists with the same full name, reuse its FId to update that row
+        // This ensures we preserve the existing FTreeSerial for that department.
+        try {
+            if (dept.getFullName() != null && !dept.getFullName().trim().isEmpty()) {
+                String existingFId = jdbcTemplate.queryForObject(
+                        "SELECT \"FId\" FROM public.\"TsDepartment\" WHERE \"FFullName\" = ? LIMIT 1",
+                        String.class,
+                        dept.getFullName());
+                if (existingFId != null && !existingFId.trim().isEmpty()) {
+                    try {
+                        UUID fid = UUID.fromString(existingFId);
+                        dept.setId(fid);
+                        logger.debug("發現已存在的 TsDepartment，將使用其 FId 更新 (FId={} , FFullName={})", existingFId, dept.getFullName());
+                    } catch (Exception e) {
+                        logger.debug("解析已存在 TsDepartment.FId 失敗: {}", e.getMessage());
+                    }
+                }
+            }
+        } catch (EmptyResultDataAccessException ignore) {
+            // not found, will insert new
+        } catch (Exception e) {
+            logger.debug("查詢是否已有 TsDepartment 時發生錯誤，將繼續: {}", e.getMessage());
+        }
+
         // Step 1: 查找 FParentId (父部門的 FId)
         UUID parentFId = null;
         String parentCode = dept.getParentCode();
@@ -432,7 +502,7 @@ public class HRDataProcessService {
             parentFId = UUID.fromString("00000000-0000-0000-1001-000000000001");
         } else if (parentCode != null && !parentCode.isEmpty()) {
             try {
-                String parentIdSql = "SELECT id FROM CUS_HRImport_Department WHERE code = ?";
+                String parentIdSql = "SELECT \"id\" FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?";
                 parentFId = jdbcTemplate.queryForObject(parentIdSql, UUID.class, parentCode);
             } catch (EmptyResultDataAccessException e) {
                 logger.warn("未找到父部門 (code={}) 的 CUS id，FParentId 設為 NULL。", parentCode);
@@ -445,48 +515,45 @@ public class HRDataProcessService {
         // compute FTreeSerial based on configured start and parent chain
         String fTreeSerial = computeFTreeSerial(dept);
 
-        // Step 2: 使用 MERGE INTO 插入或更新 TsDepartment
+        // Step 2: 使用 PostgreSQL 的 upsert (INSERT ... ON CONFLICT) 插入或更新 TsDepartment
         // TsDepartment 欄位: FId, FParentId, FIndex, FTreeLevel, FTreeSerial, FName, FFullName, FShortCode, FDescription
 
-        String mergeSql =
-                "MERGE INTO TsDepartment AS Target " +
-                        "USING (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)) " +
-                        "AS Source (FId, FParentId, FIndex, FTreeLevel, FName, FFullName, FShortCode, FDescription, FTreeSerial) " +
-                        "ON (Target.FId = Source.FId) " +
-                        "WHEN MATCHED THEN " +
-                        "    UPDATE SET " +
-                        "        FParentId = Source.FParentId, " +
-                        "        FTreeLevel = Source.FTreeLevel, " +
-                        "        FName = Source.FName, " +
-                        "        FFullName = Source.FFullName, " +
-                        "        FShortCode = Source.FShortCode, " +
-                        "        FDescription = Source.FDescription, " +
-                        "        FTreeSerial = Source.FTreeSerial, " +
-                        "        FUserId = ? , " +
-                        "        FIsServices = 0, " +
-                        "        FIsSales = 0, " +
-                        "        FEnabled = 1, " +
-                        "        FIsCompany = 0 " +
-                        "WHEN NOT MATCHED BY TARGET THEN " +
-                        "    INSERT (FId, FParentId, FIndex, FTreeLevel, FTreeSerial, FName, FFullName, FShortCode, FDescription, FUserId, FEnabled, FIsCompany, FIsServices, FIsSales) " +
-                        "    VALUES (Source.FId, Source.FParentId, Source.FIndex, Source.FTreeLevel, Source.FTreeSerial, Source.FName, Source.FFullName, Source.FShortCode, Source.FDescription, ?, 1, 0, 0, 0);";
+        String upsertSql =
+                "INSERT INTO public.\"TsDepartment\" (\"FId\",\"FParentId\",\"FIndex\",\"FTreeLevel\",\"FTreeSerial\",\"FName\",\"FFullName\",\"FShortCode\",\"FDescription\",\"FUserId\",\"FEnabled\",\"FIsCompany\",\"FIsServices\",\"FIsSales\") " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                        "ON CONFLICT (\"FId\") DO UPDATE SET " +
+                        "\"FParentId\" = EXCLUDED.\"FParentId\", " +
+                        "\"FTreeLevel\" = EXCLUDED.\"FTreeLevel\", " +
+                        "\"FName\" = EXCLUDED.\"FName\", " +
+                        "\"FFullName\" = EXCLUDED.\"FFullName\", " +
+                        "\"FShortCode\" = EXCLUDED.\"FShortCode\", " +
+                        "\"FDescription\" = EXCLUDED.\"FDescription\", " +
+                        "\"FTreeSerial\" = EXCLUDED.\"FTreeSerial\", " +
+                        "\"FUserId\" = EXCLUDED.\"FUserId\", " +
+                        "\"FIsServices\" = 0, " +
+                        "\"FIsSales\" = 0, " +
+                        "\"FEnabled\" = 1, " +
+                        "\"FIsCompany\" = 0";
 
         UUID fixedUserId = UUID.fromString("00000000-0000-0000-1002-000000000001");
 
-        // 執行 MERGE 語句
-        jdbcTemplate.update(mergeSql,
-                dept.getId(),                 // FId
-                parentFId,                    // FParentId
-                0,                             // FIndex (預設 0)
-                dept.getTreeLevel() != null ? dept.getTreeLevel() : 1, // FTreeLevel
-                dept.getName(),               // FName
-                dept.getFullName(),           // FFullName
-                dept.getDep_code(),           // FShortCode (mapped from dep_code)
-                dept.getDescription(),        // FDescription
-                fTreeSerial,                  // FTreeSerial (computed)
-                fixedUserId,                  // set FUserId on update
-                fixedUserId                   // set FUserId on insert
-        );
+        // 執行 upsert 語句
+        jdbcTemplate.update(upsertSql,
+                (dept.getId() == null ? null : dept.getId().toString()),                 // FId
+                (parentFId == null ? null : parentFId.toString()),                    // FParentId
+                 0,                             // FIndex (預設 0)
+                 dept.getTreeLevel() != null ? dept.getTreeLevel() : 1, // FTreeLevel
+                 fTreeSerial,                  // FTreeSerial (computed)
+                 dept.getName(),               // FName
+                 dept.getFullName(),           // FFullName
+                 dept.getDep_code(),           // FShortCode (mapped from dep_code)
+                 dept.getDescription(),        // FDescription
+                (fixedUserId == null ? null : fixedUserId.toString()),                  // FUserId (for insert/update via EXCLUDED)
+                 1,                            // FEnabled
+                 0,                            // FIsCompany
+                 0,                            // FIsServices
+                 0                             // FIsSales
+         );
 
         logger.info("TsDepartment 同步: {} ({}) 完成, FParentId: {}, FTreeSerial: {}", dept.getName(), dept.getCode(), parentFId, fTreeSerial);
     }
@@ -510,6 +577,25 @@ public class HRDataProcessService {
         // if level == 1, return the base "001"
         if (level == 1) return "001";
 
+        // If this department already exists in TsDepartment (by FId), preserve its current FTreeSerial.
+        // This avoids changing an existing department's serial (e.g., 001.003.004.003.007.001) to a new value.
+        try {
+            if (dept.getId() != null) {
+                String existing = jdbcTemplate.queryForObject(
+                        "SELECT \"FTreeSerial\" FROM public.\"TsDepartment\" WHERE \"FId\" = ?",
+                        String.class,
+                        dept.getId().toString());
+                if (existing != null && !existing.trim().isEmpty()) {
+                    // return existing serial unchanged
+                    return existing;
+                }
+            }
+        } catch (EmptyResultDataAccessException ignore) {
+            // no existing TsDepartment for this FId, continue to compute a new serial
+        } catch (Exception e) {
+            logger.debug("查詢現有 TsDepartment.FTreeSerial 時發生例外，將繼續分配新序號: {}", e.getMessage());
+        }
+
         // get configured start suffix (e.g., startFTreeSerial = "001.001")
         String start = (startFTreeSerial == null) ? "001.001" : startFTreeSerial;
         int startSuffixNum = 1;
@@ -522,12 +608,12 @@ public class HRDataProcessService {
             if (level == 2) {
                 // PRIORITY 1: Check if this department already has children in TsDepartment
                 // If so, derive parent serial from existing children to maintain consistency
-                String childCheckSql = "SELECT TOP 1 FTreeSerial FROM TsDepartment " +
-                        "WHERE FFullName LIKE ? AND FTreeLevel > 2 " +
-                        "ORDER BY FTreeSerial";
+                String childCheckSql = "SELECT \"FTreeSerial\" FROM public.\"TsDepartment\" " +
+                        "WHERE \"FFullName\" LIKE ? AND \"FTreeLevel\" > 2 " +
+                        "ORDER BY \"FTreeSerial\" LIMIT 1";
                 try {
                     // Search for children whose FFullName starts with this department's name
-                    // e.g., if dept.getName() is "總經理", find "總經理直轄-xxx"
+                    // e.g., if dept.getName() is "總經理", find "總經理直轄-法令遵循部-法令遵循二科"
                     String childPattern = dept.getName() + "%";
                     List<String> childSerials = jdbcTemplate.queryForList(childCheckSql, String.class, childPattern);
 
@@ -548,7 +634,7 @@ public class HRDataProcessService {
 
                 // collect all existing serials that start with '001.' (include deeper nodes)
                 String likePattern = "001.%";
-                String sql = "SELECT FTreeSerial FROM TsDepartment WHERE FTreeSerial LIKE ?";
+                String sql = "SELECT \"FTreeSerial\" FROM public.\"TsDepartment\" WHERE \"FTreeSerial\" LIKE ?";
                 List<String> all = jdbcTemplate.queryForList(sql, String.class, likePattern);
 
                 // build set of used level-2 suffix numbers (from both level-2 rows and deeper rows)
@@ -566,7 +652,7 @@ public class HRDataProcessService {
                 // PRIORITY 2: find deeper TsDepartment rows whose FFullName tokens indicate they belong under this department
                 Set<Integer> candidateFromName = new HashSet<>();
                 try {
-                    String sqlAll = "SELECT FTreeSerial, FFullName FROM TsDepartment WHERE FTreeSerial LIKE ?";
+                    String sqlAll = "SELECT \"FTreeSerial\", \"FFullName\" FROM public.\"TsDepartment\" WHERE \"FTreeSerial\" LIKE ?";
                     List<Map<String, Object>> rows = jdbcTemplate.queryForList(sqlAll, likePattern);
                     if (rows != null) {
                         for (Map<String, Object> row : rows) {
@@ -603,7 +689,7 @@ public class HRDataProcessService {
                     for (Integer cand : sorted) {
                         try {
                             String serial = String.format("001.%03d", cand);
-                            Integer cntLevel2 = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM TsDepartment WHERE FTreeSerial = ? AND FTreeLevel = 2", Integer.class, serial);
+                            Integer cntLevel2 = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM public.\"TsDepartment\" WHERE \"FTreeSerial\" = ? AND \"FTreeLevel\" = 2", Integer.class, serial);
                             if (cntLevel2 == null || cntLevel2 == 0) {
                                 logger.info("從名稱推導父部門序號: {} -> {}", dept.getName(), serial);
                                 return serial;
@@ -635,13 +721,13 @@ public class HRDataProcessService {
                     // fallback
                     return "001";
                 }
-                UUID parentCusId = jdbcTemplate.queryForObject("SELECT id FROM CUS_HRImport_Department WHERE code = ?", UUID.class, parentCodeFull);
-                String parentFTree = jdbcTemplate.queryForObject("SELECT FTreeSerial FROM TsDepartment WHERE FId = ?", String.class, parentCusId);
+                UUID parentCusId = jdbcTemplate.queryForObject("SELECT \"id\" FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?", UUID.class, parentCodeFull);
+                String parentFTree = jdbcTemplate.queryForObject("SELECT \"FTreeSerial\" FROM public.\"TsDepartment\" WHERE \"FId\" = ?", String.class, parentCusId == null ? null : parentCusId.toString());
                 if (parentFTree == null) parentFTree = "001";
 
                 // lookup existing children under parentFTree (children will have prefix parentFTree+'.%')
                 String likePattern = parentFTree + ".%";
-                String sql = "SELECT FTreeSerial FROM TsDepartment WHERE FTreeSerial LIKE ?";
+                String sql = "SELECT \"FTreeSerial\" FROM public.\"TsDepartment\" WHERE \"FTreeSerial\" LIKE ?";
                 List<String> existing = jdbcTemplate.queryForList(sql, String.class, likePattern);
 
                 // build set of numeric last-segments among existing children that are direct children of parent
@@ -692,14 +778,14 @@ public class HRDataProcessService {
         
         logger.info("員工資料處理完成: 成功 {} 筆, 失敗 {} 筆", successCount, errorCount);
     }
-    
+
     private void processSingleEmployee(HRData hrData, String sourceFileName) {
         String workcard = hrData.getWorkcard();
         String empName = hrData.getEmpName();
-        String mobile = hrData.getMobile();
         String depCode = hrData.getDepCode();
         String depName = hrData.getDepName();
         String depNo = hrData.getDepNo();
+        String depFullName = hrData.getDepName(); // init depName. Change it below.
 
         if (workcard == null || workcard.trim().isEmpty()) {
             logger.warn("員工編號為空，跳過處理。員工姓名: {}", empName);
@@ -709,119 +795,218 @@ public class HRDataProcessService {
         logger.debug("處理員工: {} ({})", empName, workcard);
 
         try {
-            // 檢查員工帳號是否存在
-            String checkAccountSql = "SELECT COUNT(*) FROM TsAccount WHERE FLoginName = ?";
+            // 檢查帳號是否存在
+            String checkAccountSql = "SELECT COUNT(*) FROM public.\"TsAccount\" WHERE \"FLoginName\" = ?";
             Integer accountCount = jdbcTemplate.queryForObject(checkAccountSql, Integer.class, workcard);
 
-            // 取得部門ID — use dep_code per request
-            String deptIdSql = "SELECT id FROM CUS_HRImport_Department WHERE dep_code = ?";
-            List<UUID> departmentIds = jdbcTemplate.queryForList(deptIdSql, UUID.class, depCode);
-
             UUID departmentId = null;
-            if (departmentIds == null || departmentIds.isEmpty()) {
-                departmentId = null;
-            } else {
-                departmentId = departmentIds.get(0);
-                if (departmentIds.size() > 1) {
-                    logger.warn("dep_code={} 對應多筆 CUS_HRImport_Department id，使用第一筆 id={}", depCode, departmentId);
-                    insertErrorLog("EMPLOYEE", workcard, hrData,
-                            new RuntimeException("Multiple CUS_HRImport_Department rows for dep_code=" + depCode),
-                            sourceFileName);
+
+            /* =========================
+             * 特殊部門處理（依 workplace）
+             * ========================= */
+            try {
+                String wp = hrData.getWorkplaceName();
+                if (depName != null
+                        && depName.contains("商品處-理賠部-理賠一科-")
+                        && wp != null
+                        && !wp.trim().isEmpty()
+                        && !"總公司".equals(wp.trim())) {
+
+                    String specificFull = depName.trim() + "-" + wp.trim();
+                    depFullName = specificFull; // update dep full_name for employee assigned working location.
+
+                    String[] segs = specificFull.split("-");
+                    String parentOfSpecific =
+                            segs.length > 1 ? String.join("-", Arrays.copyOf(segs, segs.length - 1)) : null;
+
+                    if (parentOfSpecific != null) {
+                        ensureParentChain(parentOfSpecific, sourceFileName);
+                    }
+
+                    Integer cntExist = jdbcTemplate.queryForObject(
+                            "SELECT COUNT(*) FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?",
+                            Integer.class,
+                            specificFull
+                    );
+
+                    if (cntExist == null || cntExist == 0) {
+                        String shortName = segs[segs.length - 1].trim();
+                        int treeLevelForSpecific = segs.length + 1;
+
+                        String insertSql =
+                                "INSERT INTO public.\"CUS_HRImport_Department\" " +
+                                        "(\"id\",\"cpynid\",\"dep_no\",\"dep_code\",\"name\",\"full_name\",\"code\",\"manager\",\"parent_code\",\"description\",\"tree_level\") " +
+                                        "VALUES (?,?,?,?,?,?,?,?,?,?,?)";
+
+                        jdbcTemplate.update(
+                                insertSql,
+                                UUID.randomUUID(),
+                                hrData.getCpnyId(),
+                                depNo,
+                                depCode,
+                                shortName,
+                                specificFull,
+                                specificFull,
+                                "系統管理員",
+                                parentOfSpecific,
+                                depNo,
+                                treeLevelForSpecific
+                        );
+
+                        // 同步 TsDepartment
+                        UUID cusId = jdbcTemplate.queryForObject(
+                                "SELECT \"id\" FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?",
+                                UUID.class,
+                                specificFull
+                        );
+
+                        if (cusId != null) {
+                            Department dept = new Department();
+                            dept.setId(cusId);
+                            dept.setCpynid(hrData.getCpnyId());
+                            dept.setDep_no(depNo);
+                            dept.setDep_code(depCode);
+                            dept.setName(shortName);
+                            dept.setFullName(specificFull);
+                            dept.setCode(specificFull);
+                            dept.setManager("系統管理員");
+                            dept.setParentCode(parentOfSpecific);
+                            dept.setDescription(depNo);
+                            dept.setTreeLevel(treeLevelForSpecific);
+                            insertOrUpdateTsDepartment(dept);
+                        }
+                    }
+
+                    departmentId = jdbcTemplate.queryForObject(
+                            "SELECT \"id\" FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?",
+                            UUID.class,
+                            specificFull
+                    );
+                }
+            } catch (Exception e) {
+                logger.warn("特定部門處理失敗，回退 dep_code 查詢: {}", e.getMessage());
+            }
+
+            /* =========================
+             * fallback：依 depFullName 查部門
+             * ========================= */
+            if (departmentId == null) {
+                String deptIdSql =
+                        "SELECT \"id\" FROM public.\"CUS_HRImport_Department\" WHERE \"full_name\" = ?";
+                List<UUID> departmentIds =
+                        jdbcTemplate.queryForList(deptIdSql, UUID.class, depFullName);
+
+                if (departmentIds != null && !departmentIds.isEmpty()) {
+                    departmentId = departmentIds.get(0);
+                    if (departmentIds.size() > 1) {
+                        logger.warn("depFullName = {}. dep_code={} 對應多筆部門，使用第一筆 id={}", depFullName, depCode, departmentId);
+                        insertErrorLog(
+                                "EMPLOYEE",
+                                workcard,
+                                hrData,
+                                new RuntimeException("Multiple departments for depFullName=" + depFullName),
+                                sourceFileName
+                        );
+                    }
                 }
             }
 
             if (departmentId == null) {
-                logger.error("找不到對應的部門 dep_code={}", depCode);
-                insertErrorLog("EMPLOYEE", workcard, hrData,
-                        new RuntimeException("Department not found for dep_code=" + depCode),
-                        sourceFileName);
+                throw new RuntimeException("Department not found for depFullName=" + depFullName);
             }
 
-            // 取得部門層級，使用 dep_code 作為查詢鍵
-            String levelSql = "SELECT tree_level FROM CUS_HRImport_Department WHERE dep_code = ?";
+            /* =========================
+             * 查詢部門層級（用 id）
+             * ========================= */
             Integer treeLevel = null;
             try {
-                List<Integer> levels = jdbcTemplate.queryForList(levelSql, Integer.class, depCode);
-                if (levels == null || levels.isEmpty()) {
-                    treeLevel = null;
-                } else {
-                    if (levels.size() > 1) {
-                        logger.warn("dep_code={} 對應多筆 tree_level，使用第一筆: {}", depCode, levels.get(0));
-                        insertErrorLog("EMPLOYEE", workcard, hrData,
-                                new RuntimeException("Multiple tree_level rows for dep_code=" + depCode),
-                                sourceFileName);
-                    }
-                    treeLevel = levels.get(0);
-                }
-            } catch (Exception ex) {
-                logger.warn("查詢部門層級時發生例外 (dep_code={})，預設為NULL: {}", depCode, ex.getMessage());
-                treeLevel = null;
+                treeLevel = jdbcTemplate.queryForObject(
+                        "SELECT \"tree_level\" FROM public.\"CUS_HRImport_Department\" WHERE \"id\" = ?",
+                        Integer.class,
+                        departmentId
+                );
+            } catch (Exception e) {
+                logger.warn("查詢部門層級失敗 depId={}", departmentId);
             }
 
+            /* =========================
+             * 建立或更新員工
+             * ========================= */
             if (accountCount == null || accountCount == 0) {
-                // 新增員工
                 createNewEmployee(hrData, departmentId);
             } else {
-                // 更新員工 - 根據層級決定是否更新部門
                 updateEmployee(hrData, departmentId, treeLevel);
             }
 
         } catch (Exception e) {
             logger.error("處理員工資料失敗: {} ({})", empName, workcard, e);
-            // log error with file name
             insertErrorLog("EMPLOYEE", workcard, hrData, e, sourceFileName);
             throw new RuntimeException("員工處理失敗", e);
         }
     }
+
     
     private void createNewEmployee(HRData hrData, UUID departmentId) {
         UUID employeeId = UUID.randomUUID();
         UUID accountId = UUID.randomUUID();
         UUID identityId = UUID.randomUUID();
         
+        // Determine whether the created account/user should be enabled.
+        // If enabledStates contains this HRData.stateNo then enable, otherwise disable.
+        boolean shouldBeEnabled = (enabledStates != null && hrData.getStateNo() != null && enabledStates.contains(hrData.getStateNo()));
+        int enabledFlag = shouldBeEnabled ? 1 : 0;
+
         // 插入TsAccount
-        String accountSql = "INSERT INTO TsAccount (FId, FName, FLoginName, FPassword, FEmail, FMobile, " +
-                "FCreateTime, FEnabled, FLanguage) VALUES (?, ?, ?, ?, ?, ?, GETDATE(), 1, 'zh-TW')";
-        
-        jdbcTemplate.update(accountSql, accountId, hrData.getEmpName(), hrData.getWorkcard(), 
-                defaultPassword, "", hrData.getMobile());
+        String accountSql = "INSERT INTO public.\"TsAccount\" (\"FId\", \"FName\", \"FLoginName\", \"FPassword\", \"FEmail\", \"FMobile\", " +
+                "\"FCreateTime\", \"FEnabled\", \"FLanguage\") VALUES (?, ?, ?, ?, ?, ?, now(), ?, ?)";
+
+        jdbcTemplate.update(accountSql, accountId.toString(), hrData.getEmpName(), hrData.getWorkcard(),
+                defaultPassword, "", hrData.getMobile(), enabledFlag, "zh-TW");
 
         // 插入TsUser
-        String userSql = "INSERT INTO TsUser (FId, FName, FLoginName, FPassword, FDepartmentId, " +
-                "FMobile, FEmail, FEnabled, FOnGuard, FLanguage, FUserNo) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 'zh-TW', ?)";
-        
-        jdbcTemplate.update(userSql, employeeId, hrData.getEmpName(), hrData.getWorkcard(), 
-                defaultPassword, departmentId, hrData.getMobile(), "", hrData.getWorkcard());
+        String userSql = "INSERT INTO public.\"TsUser\" (\"FId\", \"FName\", \"FLoginName\", \"FPassword\", \"FDepartmentId\", " +
+                "\"FMobile\", \"FEmail\", \"FEnabled\", \"U_EmployeeCore\", \"FSeatId\", \"FOnGuard\", \"FLanguage\") " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'zh-TW')";
+
+        // set U_EmployeeCore and FSeatId to be the same as FLoginName (workcard)
+        jdbcTemplate.update(userSql, employeeId.toString(), hrData.getEmpName(), hrData.getWorkcard(),
+                defaultPassword, (departmentId == null ? null : departmentId.toString()), hrData.getMobile(), "", enabledFlag,
+                hrData.getWorkcard(), hrData.getWorkcard());
 
         // 插入TsAccountIdentity
-        String identitySql = "INSERT INTO TsAccountIdentity (FId, FName, FAccountId, FIdentityTypeId, " +
-                "FEntityId, FDefault, FIndex) VALUES (?, ?, ?, ?, ?, 1, 0)";
+        String identitySql = "INSERT INTO public.\"TsAccountIdentity\" (\"FId\", \"FName\", \"FAccountId\", \"FIdentityTypeId\", " +
+                "\"FEntityId\", \"FDefault\", \"FIndex\") VALUES (?, ?, ?, ?, ?, 1, 0)";
 
         // use configured identity type id (string) to insert into FIdentityTypeId
         String identityType = defaultIdentityTypeId;
-        jdbcTemplate.update(identitySql, identityId, hrData.getEmpName(), accountId, identityType, employeeId);
+        jdbcTemplate.update(identitySql, identityId.toString(), hrData.getEmpName(), accountId.toString(), identityType, employeeId.toString());
 
         logger.info("新增員工: {} ({})", hrData.getEmpName(), hrData.getWorkcard());
     }
     
     private void updateEmployee(HRData hrData, UUID departmentId, Integer treeLevel) {
-        // 只有部門層級 < 4 時才更新部門
+        // 只有部門層級 < treeLabelUpdateDep 時才更新部門
         String userUpdateSql;
-        if (treeLevel != null && treeLevel < 4) {
-            userUpdateSql = "UPDATE TsUser SET FName = ?, FMobile = ?, FDepartmentId = ? " +
-                    "WHERE FLoginName = ?";
-            jdbcTemplate.update(userUpdateSql, hrData.getEmpName(), hrData.getMobile(), 
-                    departmentId, hrData.getWorkcard());
-        } else {
-            userUpdateSql = "UPDATE TsUser SET FName = ?, FMobile = ? WHERE FLoginName = ?";
-            jdbcTemplate.update(userUpdateSql, hrData.getEmpName(), hrData.getMobile(), 
-                    hrData.getWorkcard());
-        }
-        
+        int threshold = (treeLabelUpdateDep == null) ? 4 : treeLabelUpdateDep.intValue();
+        if (treeLevel != null && treeLevel < threshold) {
+            userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"FDepartmentId\" = ?, \"U_EmployeeCore\" = ?, \"FSeatId\" = ? " +
+                    "WHERE \"FLoginName\" = ?";
+            // set U_EmployeeCore and FSeatId to the current login name (workcard)
+            jdbcTemplate.update(userUpdateSql,
+                    hrData.getEmpName(),
+                    hrData.getMobile(),
+                    (departmentId == null ? null : departmentId.toString()),
+                    hrData.getWorkcard(), // U_EmployeeCore
+                    hrData.getWorkcard(), // FSeatId
+                    hrData.getWorkcard()); // WHERE FLoginName = ?
+         } else {
+             userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"U_EmployeeCore\" = ?, \"FSeatId\" = ? WHERE \"FLoginName\" = ?";
+             jdbcTemplate.update(userUpdateSql, hrData.getEmpName(), hrData.getMobile(), hrData.getWorkcard(), hrData.getWorkcard(), hrData.getWorkcard());
+         }
+
         // 更新TsAccount
-        String accountUpdateSql = "UPDATE TsAccount SET FName = ?, FMobile = ? WHERE FLoginName = ?";
-        jdbcTemplate.update(accountUpdateSql, hrData.getEmpName(), hrData.getMobile(), 
+        String accountUpdateSql = "UPDATE public.\"TsAccount\" SET \"FName\" = ?, \"FMobile\" = ? WHERE \"FLoginName\" = ?";
+        jdbcTemplate.update(accountUpdateSql, hrData.getEmpName(), hrData.getMobile(),
                 hrData.getWorkcard());
         
         logger.debug("更新員工: {} ({})", hrData.getEmpName(), hrData.getWorkcard());
@@ -887,10 +1072,6 @@ public class HRDataProcessService {
      */
     private void insertErrorLog(String recordType, String recordKey, HRData hrData, Exception ex, String fileName) {
         try {
-            // store processed_at as Taipei local time (UTC+8) regardless of DB server timezone
-            String insertSql = "INSERT INTO CUS_HRImport_Error_Log (id, file_name, record_type, record_key, payload, error_message, stack_trace, processed_at, created_by) " +
-                    "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, CONVERT(datetime2, SWITCHOFFSET(SYSUTCDATETIME() AT TIME ZONE 'UTC', '+08:00')), ?)";
-
             String payload = hrData == null ? null : hrData.toString();
             String errMsg = ex == null ? "" : ex.getMessage();
             String stack = null;
@@ -900,15 +1081,8 @@ public class HRDataProcessService {
                 stack = sw.toString();
             }
 
-            jdbcTemplate.update(insertSql,
-                    fileName,              // file_name
-                    recordType,            // record_type
-                    recordKey,             // record_key
-                    payload,               // payload
-                    errMsg,                // error_message
-                    stack,                 // stack_trace
-                    "hr-import-service"   // created_by
-            );
+            // Delegate to ErrorLogService which will run in REQUIRES_NEW transaction
+            errorLogService.insertErrorLog(recordType, recordKey, payload, errMsg, stack, fileName);
         } catch (Exception logEx) {
             logger.error("寫入 CUS_HRImport_Error_Log 失敗: {}", logEx.getMessage(), logEx);
         }
@@ -934,13 +1108,14 @@ public class HRDataProcessService {
             final String parentCode = def[1] == null ? null : def[1].trim();
             final int treeLevel = Integer.parseInt(def[2]);
             try {
-                String checkSql = "SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?";
+                String checkSql = "SELECT COUNT(*) FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?";
                 Integer cnt = jdbcTemplate.queryForObject(checkSql, Integer.class, code);
                 if (cnt == null || cnt == 0) {
-                    String insertSql = "INSERT INTO CUS_HRImport_Department " +
-                            "(id, cpynid, dep_no, dep_code, name, full_name, code, manager, parent_code, description, tree_level) " +
-                            "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    String insertSql = "INSERT INTO public.\"CUS_HRImport_Department\" " +
+                            "(\"id\", \"cpynid\", \"dep_no\", \"dep_code\", \"name\", \"full_name\", \"code\", \"manager\", \"parent_code\", \"description\", \"tree_level\") " +
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                     jdbcTemplate.update(insertSql,
+                            UUID.randomUUID(), // id
                             null, // cpynid
                             null, // dep_no
                             null, // dep_code
@@ -956,7 +1131,7 @@ public class HRDataProcessService {
 
                     // fetch id and sync to TsDepartment
                     try {
-                        UUID cusId = jdbcTemplate.queryForObject("SELECT id FROM CUS_HRImport_Department WHERE code = ?", UUID.class, code);
+                        UUID cusId = jdbcTemplate.queryForObject("SELECT \"id\" FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?", UUID.class, code);
                         if (cusId != null) {
                             Department dept = new Department();
                             dept.setId(cusId);
@@ -999,7 +1174,7 @@ public class HRDataProcessService {
         if (parentCode == null || parentCode.trim().isEmpty()) return;
         String code = parentCode.trim();
         try {
-            Integer cnt = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM CUS_HRImport_Department WHERE code = ?", Integer.class, code);
+            Integer cnt = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?", Integer.class, code);
             if (cnt != null && cnt > 0) return; // already exists
         } catch (Exception e) {
             logger.warn("檢查父部門是否存在時發生例外: {}", e.getMessage(), e);
@@ -1019,10 +1194,11 @@ public class HRDataProcessService {
 
         // insert parent record into CUS_HRImport_Department
         try {
-            String insertSql = "INSERT INTO CUS_HRImport_Department " +
-                    "(id, cpynid, dep_no, dep_code, name, full_name, code, manager, parent_code, description, tree_level) " +
-                    "VALUES (NEWID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            String insertSql = "INSERT INTO public.\"CUS_HRImport_Department\" " +
+                    "(\"id\", \"cpynid\", \"dep_no\", \"dep_code\", \"name\", \"full_name\", \"code\", \"manager\", \"parent_code\", \"description\", \"tree_level\") " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             jdbcTemplate.update(insertSql,
+                    UUID.randomUUID(), // id
                     null, // cpynid
                     null, // dep_no
                     null, // dep_code
@@ -1038,7 +1214,7 @@ public class HRDataProcessService {
 
             // sync to TsDepartment
             try {
-                UUID cusId = jdbcTemplate.queryForObject("SELECT id FROM CUS_HRImport_Department WHERE code = ?", UUID.class, code);
+                UUID cusId = jdbcTemplate.queryForObject("SELECT \"id\" FROM public.\"CUS_HRImport_Department\" WHERE \"code\" = ?", UUID.class, code);
                 if (cusId != null) {
                     Department dept = new Department();
                     dept.setId(cusId);

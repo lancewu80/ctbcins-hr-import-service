@@ -3,39 +3,42 @@ package com.ctbcins.hrimport.entity;
 import javax.persistence.*;
 import java.util.UUID;
 
+import org.hibernate.annotations.GenericGenerator;
+
 @Entity
 @Table(name = "CUS_HRImport_Department")
 public class Department {
     @Id
-    @GeneratedValue
-    @Column(columnDefinition = "uniqueidentifier")
+    @GeneratedValue(generator = "UUID")
+    @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
+    @Column(name = "id", columnDefinition = "uuid", updatable = false, nullable = false)
     private UUID id;
 
-    @Column(name = "cpynid",columnDefinition = "nvarchar(50)")
+    @Column(name = "cpynid", length = 50)
     private String cpynid;
 
-    @Column(name = "dep_no",columnDefinition = "nvarchar(50)")
+    @Column(name = "dep_no", length = 50)
     private String dep_no;
 
-    @Column(name = "dep_code",columnDefinition = "nvarchar(50)")
+    @Column(name = "dep_code", length = 50)
     private String dep_code;
 
-    @Column(name = "name",columnDefinition = "nvarchar(200)")
+    @Column(name = "name", length = 200)
     private String name;
     
-    @Column(name = "full_name", columnDefinition = "nvarchar(200)")
+    @Column(name = "full_name", length = 200)
     private String fullName;
     
-    @Column(name = "code", columnDefinition = "nvarchar(50)", unique = true)
+    @Column(name = "code", length = 50, unique = true)
     private String code;
     
-    @Column(name = "manager", columnDefinition = "nvarchar(100)")
+    @Column(name = "manager", length = 100)
     private String manager = "系統管理員";
     
-    @Column(name = "parent_code", columnDefinition = "nvarchar(50)")
+    @Column(name = "parent_code", length = 50)
     private String parentCode;
     
-    @Column(name = "description", columnDefinition = "nvarchar(500)")
+    @Column(name = "description", length = 500)
     private String description;
     
     @Column(name = "tree_level")
@@ -44,7 +47,7 @@ public class Department {
     // getters and setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
-    
+
     public String getCpynid() { return cpynid; }
     public void setCpynid(String cpynid) { this.cpynid = cpynid; }
 

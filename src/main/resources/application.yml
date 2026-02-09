@@ -1,19 +1,19 @@
 spring:
   datasource:
-    url: jdbc:sqlserver://localhost:1433;databaseName=ecp8502;encrypt=false
-    username: ecp
-    password: csii1qaz@WSX
-    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    url: jdbc:postgresql://192.168.112.146:5432/ai3ecp
+    username: ai3
+    password: ai3
+    driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
     show-sql: true
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.SQLServerDialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
-        # 禁用自動引號，讓 Hibernate 使用原始表名
-        globally_quoted_identifiers: false
+        # 啟用自動引號，讓 Hibernate 使用實體上標註的表名/欄位名稱大小寫
+        globally_quoted_identifiers: true
         # 明確設定命名策略
         naming-strategy: org.hibernate.cfg.EJB3NamingStrategy
         # 禁用物理命名策略
@@ -22,6 +22,10 @@ spring:
     jdbc:
       initialize-schema: always
 
+server:
+  port: 13801
+  tomcat:
+    use-apr: false
 app:
   sftp:
     host: ${SFTP_HOST:10.2.3.4}
@@ -33,12 +37,14 @@ app:
   processing:
     enabled-states: A
     disabled-states: C,B,D,E
-  default-password: "angdndfpnpoenpaipbflakdaccpjleoppoohpenihhojkbcllalgchbgbiaajoahbibbeggfalaenbpn"
+  default-password: "loclmjbekjjpejbkllnpebakjcgaifekgniemamkggajjbmmgdnhfgmfnchakhgnaflbahapbfokenfd"
   ts:
     # starting FTreeSerial for level-2 generation. Example: 001.001 -> level2 starts from 001.001
     start-ftreeserial: "001.001"
   # default FIdentityTypeId to insert into TsAccountIdentity; can be overridden per environment
-  identity-type-id: "564CF69E-76D6-4BAF-B584-6E04C2911DAE"
+  identity-type-id: "564cf69e-76d6-4baf-b584-6e04c2911dae"
+  # Configure the tree level threshold under which employee department will be updated (default 4)
+  tree-label-update-dep: 7
 
 logging:
   level:
@@ -46,6 +52,8 @@ logging:
     com.citic.hrimport: DEBUG
   file:
     name: logs/hr-import.log
+  charset:
+    file: UTF-8
   pattern:
     file: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
 scheduler:
