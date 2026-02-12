@@ -67,6 +67,10 @@ public class HRDataProcessService {
     @Value("${app.identity-type-id:564CF69E-76D6-4BAF-B584-6E04C2911DAE}")
     private String defaultIdentityTypeId;
 
+    // 新增：設定從 application.yml 讀取用於 TsRoleUser 的角色 ID（在 rol_user_id）
+    @Value("${app.rol_user_id:}")
+    private String tsRoleUserRoleId;
+
     // 可在 application.yml 設定: app.tree-label-update-dep，預設值為 4
     @Value("${app.tree-label-update-dep:4}")
     private Integer treeLabelUpdateDep;
@@ -981,6 +985,22 @@ public class HRDataProcessService {
         String identityType = defaultIdentityTypeId;
         jdbcTemplate.update(identitySql, identityId.toString(), hrData.getEmpName(), accountId.toString(), identityType, employeeId.toString());
 
+        // 新增：將 TsRoleUser 的關聯寫入（FUserId 使用 accountId，FRoleId 從設定取得）
+        if (tsRoleUserRoleId != null && !tsRoleUserRoleId.trim().isEmpty()) {
+            try {
+                String insertRoleUserSql = "INSERT INTO public.\"TsRoleUser\" (\"FRoleId\",\"FUserId\") VALUES (?,?) ON CONFLICT (\"FRoleId\",\"FUserId\") DO NOTHING";
+                jdbcTemplate.update(insertRoleUserSql, tsRoleUserRoleId, accountId.toString());
+                logger.info("已將角色關聯寫入 TsRoleUser: role={} userId={}", tsRoleUserRoleId, accountId);
+            } catch (Exception e) {
+                logger.warn("寫入 TsRoleUser 失敗: role={} userId={} err={} ", tsRoleUserRoleId, accountId, e.getMessage());
+                try {
+                    insertErrorLog("EMPLOYEE", hrData.getWorkcard(), hrData, e, null);
+                } catch (Exception ignore) { }
+            }
+        } else {
+            logger.debug("未設定 app.identity-type-id.rol_user_id，跳過寫入 TsRoleUser。");
+        }
+
         logger.info("新增員工: {} ({})", hrData.getEmpName(), hrData.getWorkcard());
     }
     
@@ -1009,6 +1029,62 @@ public class HRDataProcessService {
         jdbcTemplate.update(accountUpdateSql, hrData.getEmpName(), hrData.getMobile(),
                 hrData.getWorkcard());
         
+        // 新增/確保 TsRoleUser 關聯存在：先查出 TsAccount.FId，然後 upsert TsRoleUser
+        if (tsRoleUserRoleId != null && !tsRoleUserRoleId.trim().isEmpty()) {
+            try {
+                // 先查出 TsAccount.FId（以 String 讀出，避免 JDBC 將 UUID 轉成 String 導致類型轉換錯誤）
+                String findAccountIdSql = "SELECT \"FId\" FROM public.\"TsAccount\" WHERE \"FLoginName\" = ?";
+                String accountIdStr = null;
+                try {
+                    accountIdStr = jdbcTemplate.queryForObject(findAccountIdSql, String.class, hrData.getWorkcard());
+                } catch (EmptyResultDataAccessException ex) {
+                    logger.warn("更新 TsRoleUser 時未找到 TsAccount (loginName={})", hrData.getWorkcard());
+                } catch (Exception ex) {
+                    logger.warn("查詢 TsAccount.FId 失敗: {}", ex.getMessage());
+                }
+
+                // 解析為 UUID (若可解析)，並以字串形式作為 FUserId 更新或插入 TsRoleUser
+                String fUserIdForSql = null;
+                if (accountIdStr != null && !accountIdStr.trim().isEmpty()) {
+                    try {
+                        // validate UUID string
+                        UUID parsed = UUID.fromString(accountIdStr.trim());
+                        fUserIdForSql = parsed.toString();
+                    } catch (Exception e) {
+                        // 如果無法解析為 UUID，仍嘗試使用原始字串（有些 DB driver/欄位可能已經是字串格式）
+                        logger.warn("解析 TsAccount.FId 為 UUID 失敗，將使用原始字串: {}", accountIdStr);
+                        fUserIdForSql = accountIdStr;
+                    }
+                }
+
+                // 使用 UPDATE 來設定角色對應 (直接更新，如果沒有任何列被更新則改為 INSERT)
+                String updateRoleUserSql = "UPDATE public.\"TsRoleUser\" SET \"FRoleId\" = ? WHERE \"FUserId\" = ?";
+                int affected = 0;
+                try {
+                    affected = jdbcTemplate.update(updateRoleUserSql, tsRoleUserRoleId, fUserIdForSql);
+                } catch (Exception e) {
+                    logger.warn("更新 TsRoleUser 失敗 (role={} userId={}): {}", tsRoleUserRoleId, fUserIdForSql, e.getMessage());
+                }
+
+                if (affected > 0) {
+                    logger.info("已更新 TsRoleUser: role={} userId={} affected={}", tsRoleUserRoleId, fUserIdForSql, affected);
+                } else {
+                    // 沒有更新任何列 — 代表尚無對應的 TsRoleUser 紀錄，改為新增一筆紀錄
+                    logger.info("更新 TsRoleUser 沒有影響任何列（尚無 TsRoleUser 紀錄），將嘗試新增一筆紀錄: role={} userId={}", tsRoleUserRoleId, fUserIdForSql);
+                    try {
+                        String insertRoleUserSql = "INSERT INTO public.\"TsRoleUser\" (\"FRoleId\",\"FUserId\") VALUES (?,?) ON CONFLICT (\"FRoleId\",\"FUserId\") DO NOTHING";
+                        jdbcTemplate.update(insertRoleUserSql, tsRoleUserRoleId, fUserIdForSql);
+                        logger.info("已新增 TsRoleUser（或已存在）: role={} userId={}", tsRoleUserRoleId, fUserIdForSql);
+                    } catch (Exception ie) {
+                        logger.warn("新增 TsRoleUser 失敗: role={} userId={} err={}", tsRoleUserRoleId, fUserIdForSql, ie.getMessage());
+                        try { insertErrorLog("EMPLOYEE", hrData.getWorkcard(), hrData, ie, null); } catch (Exception ignore) {}
+                    }
+                }
+            } catch (Exception ex) {
+                logger.warn("更新 TsRoleUser 時發生錯誤: {}", ex.getMessage());
+            }
+        }
+
         logger.debug("更新員工: {} ({})", hrData.getEmpName(), hrData.getWorkcard());
     }
 

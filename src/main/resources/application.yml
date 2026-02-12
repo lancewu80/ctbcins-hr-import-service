@@ -43,6 +43,8 @@ app:
     start-ftreeserial: "001.001"
   # default FIdentityTypeId to insert into TsAccountIdentity; can be overridden per environment
   identity-type-id: "564cf69e-76d6-4baf-b584-6e04c2911dae"
+  # 預設寫入 TsRoleUser 的角色 ID（FRoleId）
+  rol_user_id: "00000000-0000-0000-0000-000000000000"
   # Configure the tree level threshold under which employee department will be updated (default 4)
   tree-label-update-dep: 7
 
@@ -60,5 +62,5 @@ scheduler:
   hrimport:
     enabled: true         # true: 每分鐘會跑 ; false: 完全停用
     cron: "0 * * * * *"   # 每分鐘一次
-    localPath: "C:\\project\\testdata\\citic"
-    localArchivePath: "C:\\project\\testdata\\archive"
+    localPath: "/opt/ai3/input"
+    localArchivePath: "/opt/ai3/archive"
