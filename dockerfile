@@ -1,22 +1,9 @@
-# Stage 1: Build JAR
-FROM eclipse-temurin:17-jdk-jammy AS build
+FROM centos:7
+
 WORKDIR /app
 
-# Install Maven
-RUN apt-get update && \
-    apt-get install -y maven && \
-    rm -rf /var/lib/apt/lists/*
+# 複製 JAR
+COPY hr-import-service-1.0.0.jar app.jar
 
-COPY pom.xml ./ 
-COPY src ./src
-
-RUN mvn clean package -DskipTests
-
-
-# Stage 2: Create runtime image
-FROM eclipse-temurin:17-jre-jammy
-WORKDIR /app
-COPY --from=build /app/target/hr-import-service-1.0.0.jar app.jar
-
-ENTRYPOINT ["java", "-jar", "app.jar"]
-
+# 使用主機已存在的 JDK
+ENTRYPOINT ["/opt/ai3/java/jdk-17.0.2/bin/java", "-jar", "/app/app.jar"]
