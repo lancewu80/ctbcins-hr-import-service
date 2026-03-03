@@ -35,6 +35,10 @@ public class ScheduledImportJob {
     @Value("${scheduler.hrimport.localPath:./hr-import}")
     private String localImportPath;
 
+    /** 本機要處理的 CSV 檔名（只處理此檔案） */
+    @Value("${scheduler.hrimport.filename:HrImport.csv}")
+    private String hrInputFilename;
+
     /**
      * 每日固定 2:00 — SFTP 匯入
      */
@@ -54,7 +58,7 @@ public class ScheduledImportJob {
             return;
         }
 
-        logger.info("開始執行 HR 匯入（本機路徑） localPath={}", localImportPath);
+        logger.info("開始執行 HR 匯入（本機路徑） localPath={} filename={}", localImportPath, hrInputFilename);
         runLocalImportJob();
     }
 
@@ -81,7 +85,7 @@ public class ScheduledImportJob {
     }
 
     /**
-     * 從本機路徑直接匯入 CSV
+     * 從本機路徑直接匯入 CSV（只處理設定的檔名）
      */
     private void runLocalImportJob() {
         try {
@@ -92,24 +96,22 @@ public class ScheduledImportJob {
                 return;
             }
 
-            File[] csvFiles = folder.listFiles((dir, name) -> name.toLowerCase().endsWith(".csv"));
+            File targetFile = new File(folder, hrInputFilename);
 
-            if (csvFiles == null || csvFiles.length == 0) {
-                logger.info("No CSV files found in local path: {}", localImportPath);
+            if (!targetFile.exists() || !targetFile.isFile()) {
+                logger.info("指定的 CSV 檔案不存在於 local path: {} (filename={})", localImportPath, hrInputFilename);
                 return;
             }
 
-            for (File file : csvFiles) {
-                try {
-                    logger.info("處理本機 CSV 檔案: {}", file.getName());
-                    hrDataProcessService.processHRFile(file.getAbsolutePath());
-                    //file.delete();
-                } catch (Exception e) {
-                    logger.error("處理本機檔案失敗: {}", file.getName(), e);
-                }
+            try {
+                logger.info("處理本機 CSV 檔案: {}", targetFile.getName());
+                hrDataProcessService.processHRFile(targetFile.getAbsolutePath());
+                //targetFile.delete();
+            } catch (Exception e) {
+                logger.error("處理本機檔案失敗: {}", targetFile.getName(), e);
             }
 
-            logger.info("本機 HR 匯入完成，共處理 {} 個 CSV", csvFiles.length);
+            logger.info("本機 HR 匯入完成，處理檔案: {}", targetFile.getName());
 
         } catch (Exception e) {
             logger.error("本機 HR 匯入任務失敗", e);

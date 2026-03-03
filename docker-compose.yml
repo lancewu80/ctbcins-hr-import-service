@@ -9,8 +9,8 @@ services:
       - "13801:13801"
     volumes:
       - /opt/ai3/java:/opt/ai3/java:ro
-      - /opt/ai3/input:/opt/ai3/input
-      - /opt/ai3/archive:/opt/ai3/archive
+      - /home/ai3/HrImportFile/input:/home/ai3/HrImportFile/input
+      - /home/ai3/HrImportFile/archive:/home/ai3/HrImportFile/archive
       - /opt/ai3/jar/docker/hrimport/logs:/app/logs
     environment:
       - LANG=C.UTF-8

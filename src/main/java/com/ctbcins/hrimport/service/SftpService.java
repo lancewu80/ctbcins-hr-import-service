@@ -33,7 +33,11 @@ public class SftpService {
     
     @Value("${app.sftp.local-dir}")
     private String localDir;
-    
+
+    // optional: configure which filename to download from SFTP (defaults to HrImport.csv)
+    @Value("${app.sftp.filename:HrImport.csv}")
+    private String sftpFilename;
+
     public List<File> downloadFiles() {
         List<File> downloadedFiles = new ArrayList<>();
         Session session = null;
@@ -59,16 +63,27 @@ public class SftpService {
             Vector<ChannelSftp.LsEntry> files = channel.ls(remotePath);
             
             for (ChannelSftp.LsEntry entry : files) {
-                if (!entry.getAttrs().isDir() && entry.getFilename().endsWith(".csv")) {
-                    String remoteFilePath = remotePath + entry.getFilename();
-                    String localFilePath = localDir + File.separator + entry.getFilename();
-                    
-                    logger.info("下載檔案: {} -> {}", remoteFilePath, localFilePath);
-                    
-                    try (FileOutputStream fos = new FileOutputStream(localFilePath)) {
-                        channel.get(remoteFilePath, fos);
-                        downloadedFiles.add(new File(localFilePath));
-                        logger.info("成功下載檔案: {}", entry.getFilename());
+                if (!entry.getAttrs().isDir()) {
+                    String filename = entry.getFilename();
+                    // if a specific filename is configured, only download that; else fall back to *.csv behavior
+                    boolean matches = false;
+                    if (sftpFilename != null && !sftpFilename.trim().isEmpty()) {
+                        matches = filename.equals(sftpFilename);
+                    } else {
+                        matches = filename.toLowerCase().endsWith(".csv");
+                    }
+
+                    if (matches) {
+                        String remoteFilePath = remotePath + entry.getFilename();
+                        String localFilePath = localDir + File.separator + entry.getFilename();
+
+                        logger.info("下載檔案: {} -> {}", remoteFilePath, localFilePath);
+
+                        try (FileOutputStream fos = new FileOutputStream(localFilePath)) {
+                            channel.get(remoteFilePath, fos);
+                            downloadedFiles.add(new File(localFilePath));
+                            logger.info("成功下載檔案: {}", entry.getFilename());
+                        }
                     }
                 }
             }
