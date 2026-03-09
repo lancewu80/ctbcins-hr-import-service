@@ -554,11 +554,11 @@ public class HRDataProcessService {
         // If a TsDepartment already exists with the same full name, reuse its FId to update that row
         // This ensures we preserve the existing FTreeSerial for that department.
         try {
-            if (dept.getFullName() != null && !dept.getFullName().trim().isEmpty()) {
+            if (dept.getDep_code() != null && !dept.getDep_code().trim().isEmpty()) {
                 String existingFId = jdbcTemplate.queryForObject(
-                        "SELECT \"FId\" FROM public.\"TsDepartment\" WHERE \"FFullName\" = ? LIMIT 1",
+                        "SELECT \"FId\" FROM public.\"TsDepartment\" WHERE \"FShortCode\" = ? LIMIT 1",
                         String.class,
-                        dept.getFullName());
+                        dept.getDep_code());
                 if (existingFId != null && !existingFId.trim().isEmpty()) {
                     try {
                         UUID fid = UUID.fromString(existingFId);
@@ -1154,20 +1154,26 @@ public class HRDataProcessService {
     private void updateEmployee(HRData hrData, UUID departmentId, Integer treeLevel) {
         // 只有部門層級 < treeLabelUpdateDep 時才更新部門
         String userUpdateSql;
+        // Determine whether the created account/user should be enabled.
+        boolean shouldBeEnabled = (enabledStates != null && hrData.getStateNo() != null && enabledStates.contains(hrData.getStateNo()));
+        int enabledFlag = shouldBeEnabled ? 1 : 0;
         int threshold = (treeLabelUpdateDep == null) ? 4 : treeLabelUpdateDep.intValue();
         if (treeLevel != null && treeLevel < threshold) {
-            userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"FDepartmentId\" = ?, \"U_EmployeeCore\" = ? " +
+            userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"FDepartmentId\" = ?, \"U_EmployeeCore\" = ?,\"FEnabled\" = ? " +
                     "WHERE \"FLoginName\" = ?";
             // set U_EmployeeCore to the current login name (workcard)
+            // Parameter order: FName, FMobile, FDepartmentId, U_EmployeeCore, FEnabled, WHERE FLoginName
             jdbcTemplate.update(userUpdateSql,
                     hrData.getEmpName(),
                     hrData.getMobile(),
                     (departmentId == null ? null : departmentId.toString()),
                     hrData.getWorkcard(), // U_EmployeeCore
+                    enabledFlag, // FEnabled (numeric)
                     hrData.getWorkcard()); // WHERE FLoginName = ?
          } else {
-             userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"U_EmployeeCore\" = ? WHERE \"FLoginName\" = ?";
-             jdbcTemplate.update(userUpdateSql, hrData.getEmpName(), hrData.getMobile(), hrData.getWorkcard(), hrData.getWorkcard());
+             userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"U_EmployeeCore\" = ?,\"FEnabled\" = ? WHERE \"FLoginName\" = ?";
+             // Parameter order: FName, FMobile, U_EmployeeCore, FEnabled, WHERE FLoginName
+             jdbcTemplate.update(userUpdateSql, hrData.getEmpName(), hrData.getMobile(), hrData.getWorkcard(), enabledFlag, hrData.getWorkcard());
          }
 
         // 更新TsAccount
