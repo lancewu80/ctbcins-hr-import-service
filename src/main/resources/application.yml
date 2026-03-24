@@ -50,7 +50,7 @@ app:
   # default FIdentityTypeId to insert into TsAccountIdentity; structured as a map with id and rol_user_id
   identity-type-id:
     id: "564cf69e-76d6-4baf-b584-6e04c2911dae"
-    rol_user_id: "00000000-0000-0000-0000-000000000000"
+    rol_user_id: "19bf8429-91e0-090e-57f8-2a1bf1c7db25"
   # Configure the tree level threshold under which employee department will be updated (default 4)
   tree-label-update-dep: 7
 

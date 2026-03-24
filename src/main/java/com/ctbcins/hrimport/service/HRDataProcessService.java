@@ -1130,13 +1130,14 @@ public class HRDataProcessService {
             try { insertErrorLog("EMPLOYEE", hrData.getWorkcard(), hrData, ex, null); } catch (Exception ignore) {}
         }
 
-        // 最後：寫入 TsRoleUser（使用 TsAccount.FId 作為 FUserId）若有設定
+        // 最後：寫入 TsRoleUser（使用 TsUser FId 作為 FUserId）若有設定
         if (tsRoleUserRoleId != null && !tsRoleUserRoleId.trim().isEmpty()) {
             try {
                 if (accountIdStr != null && !accountIdStr.trim().isEmpty()) {
                     String insertRoleUserSql = "INSERT INTO public.\"TsRoleUser\" (\"FRoleId\",\"FUserId\") VALUES (?,?) ON CONFLICT (\"FRoleId\",\"FUserId\") DO NOTHING";
-                    jdbcTemplate.update(insertRoleUserSql, tsRoleUserRoleId, accountIdStr);
-                    logger.info("已將角色關聯寫入 TsRoleUser: role={} userId={}", tsRoleUserRoleId, accountIdStr);
+                    // Use TsUser.FId (employeeId) for FUserId rather than TsAccount.FId
+                    jdbcTemplate.update(insertRoleUserSql, tsRoleUserRoleId, employeeId.toString());
+                    logger.info("已將角色關聯寫入 TsRoleUser: role={} userId={}", tsRoleUserRoleId, employeeId.toString());
                 } else {
                     logger.warn("無法取得 TsAccount.FId，跳過寫入 TsRoleUser (login={})", hrData.getWorkcard());
                 }
@@ -1159,7 +1160,7 @@ public class HRDataProcessService {
         int enabledFlag = shouldBeEnabled ? 1 : 0;
         int threshold = (treeLabelUpdateDep == null) ? 4 : treeLabelUpdateDep.intValue();
         if (treeLevel != null && treeLevel < threshold) {
-            userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"FDepartmentId\" = ?, \"U_EmployeeCore\" = ?,\"FEnabled\" = ? " +
+            userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"FDepartmentId\" = ?, \"U_EmployeeCore\" = ?,\"FEnabled\" = CAST(? AS integer) " +
                     "WHERE \"FLoginName\" = ?";
             // set U_EmployeeCore to the current login name (workcard)
             // Parameter order: FName, FMobile, FDepartmentId, U_EmployeeCore, FEnabled, WHERE FLoginName
@@ -1171,7 +1172,7 @@ public class HRDataProcessService {
                     enabledFlag, // FEnabled (numeric)
                     hrData.getWorkcard()); // WHERE FLoginName = ?
          } else {
-             userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"U_EmployeeCore\" = ?,\"FEnabled\" = ? WHERE \"FLoginName\" = ?";
+             userUpdateSql = "UPDATE public.\"TsUser\" SET \"FName\" = ?, \"FMobile\" = ?, \"U_EmployeeCore\" = ?,\"FEnabled\" = CAST(? AS integer) WHERE \"FLoginName\" = ?";
              // Parameter order: FName, FMobile, U_EmployeeCore, FEnabled, WHERE FLoginName
              jdbcTemplate.update(userUpdateSql, hrData.getEmpName(), hrData.getMobile(), hrData.getWorkcard(), enabledFlag, hrData.getWorkcard());
          }
@@ -1184,28 +1185,26 @@ public class HRDataProcessService {
         // 新增/確保 TsRoleUser 關聯存在：先查出 TsAccount.FId，然後 upsert TsRoleUser
         if (tsRoleUserRoleId != null && !tsRoleUserRoleId.trim().isEmpty()) {
             try {
-                // 先查出 TsAccount.FId（以 String 讀出，避免 JDBC 將 UUID 轉成 String 導致類型轉換錯誤）
-                String findAccountIdSql = "SELECT \"FId\" FROM public.\"TsAccount\" WHERE \"FLoginName\" = ?";
-                String accountIdStr = null;
+                // 查出 TsUser.FId（使用 TsUser 而非 TsAccount，因為 FUserId 指向 User）
+                String findUserIdSql = "SELECT \"FId\" FROM public.\"TsUser\" WHERE \"FLoginName\" = ?";
+                String userIdStr = null;
                 try {
-                    accountIdStr = jdbcTemplate.queryForObject(findAccountIdSql, String.class, hrData.getWorkcard());
+                    userIdStr = jdbcTemplate.queryForObject(findUserIdSql, String.class, hrData.getWorkcard());
                 } catch (EmptyResultDataAccessException ex) {
-                    logger.warn("更新 TsRoleUser 時未找到 TsAccount (loginName={})", hrData.getWorkcard());
+                    logger.warn("更新 TsRoleUser 時未找到 TsUser (loginName={})", hrData.getWorkcard());
                 } catch (Exception ex) {
-                    logger.warn("查詢 TsAccount.FId 失敗: {}", ex.getMessage());
+                    logger.warn("查詢 TsUser.FId 失敗: {}", ex.getMessage());
                 }
 
                 // 解析為 UUID (若可解析)，並以字串形式作為 FUserId 更新或插入 TsRoleUser
                 String fUserIdForSql = null;
-                if (accountIdStr != null && !accountIdStr.trim().isEmpty()) {
+                if (userIdStr != null && !userIdStr.trim().isEmpty()) {
                     try {
-                        // validate UUID string
-                        UUID parsed = UUID.fromString(accountIdStr.trim());
+                        UUID parsed = UUID.fromString(userIdStr.trim());
                         fUserIdForSql = parsed.toString();
                     } catch (Exception e) {
-                        // 如果無法解析為 UUID，仍嘗試使用原始字串（有些 DB driver/欄位可能已經是字串格式）
-                        logger.warn("解析 TsAccount.FId 為 UUID 失敗，將使用原始字串: {}", accountIdStr);
-                        fUserIdForSql = accountIdStr;
+                        logger.warn("解析 TsUser.FId 為 UUID 失敗，將使用原始字串: {}", userIdStr);
+                        fUserIdForSql = userIdStr;
                     }
                 }
 
