@@ -34,6 +34,8 @@ app:
     password: ${SFTP_PASSWORD:ai3[1qaz@WSX]}
     remote-path: ${SFTP_PATH:/hrfile/}
     local-dir: ${LOCAL_DIR:/tmp/hr-import}
+    # Optional: only download the specified filename from SFTP (defaults to HrImport.csv)
+    filename: HrImport.csv
   processing:
     enabled-states: A
     disabled-states: C,B,D,E
@@ -41,10 +43,14 @@ app:
   ts:
     # starting FTreeSerial for level-2 generation. Example: 001.001 -> level2 starts from 001.001
     start-ftreeserial: "001.001"
-  # default FIdentityTypeId to insert into TsAccountIdentity; can be overridden per environment
-  identity-type-id: "564cf69e-76d6-4baf-b584-6e04c2911dae"
-  # 預設寫入 TsRoleUser 的角色 ID（FRoleId）
-  rol_user_id: "00000000-0000-0000-0000-000000000000"
+    # Top-level/root TsDepartment FId used as parent for tree level 2 departments
+    root-fid: "00000000-0000-0000-1001-000000000001"
+    # Dept-level fixed user id (FUserId) to set on TsDepartment rows when syncing
+    dept-user-id: "00000000-0000-0000-1002-000000000001"
+  # default FIdentityTypeId to insert into TsAccountIdentity; structured as a map with id and rol_user_id
+  identity-type-id:
+    id: "564cf69e-76d6-4baf-b584-6e04c2911dae"
+    rol_user_id: "19bf8429-91e0-090e-57f8-2a1bf1c7db25"
   # Configure the tree level threshold under which employee department will be updated (default 4)
   tree-label-update-dep: 7
 
@@ -62,5 +68,7 @@ scheduler:
   hrimport:
     enabled: true         # true: 每分鐘會跑 ; false: 完全停用
     cron: "0 * * * * *"   # 每分鐘一次
-    localPath: "/opt/ai3/input"
-    localArchivePath: "/opt/ai3/archive"
+    localPath: "/home/ai3/HrImportFile/input"
+    localArchivePath: "/home/ai3/HrImportFile/archive"
+    # 本機要處理的 CSV 檔名（只處理此檔案）
+    filename: HrImport.csv
