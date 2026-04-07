@@ -619,7 +619,8 @@ public class HRDataProcessService {
                         "\"FUserId\" = EXCLUDED.\"FUserId\", " +
                         "\"FIsServices\" = 0, " +
                         "\"FIsSales\" = 0, " +
-                        "\"FEnabled\" = 1, " +
+                        // Keep existing FEnabled value when updating; inserts will use the provided EXCLUDED value (we pass 1 for inserts)
+                        "\"FEnabled\" = public.\"TsDepartment\".\"FEnabled\", " +
                         "\"FIsCompany\" = 0";
 
         UUID fixedUserId = null;
