@@ -68,7 +68,7 @@ scheduler:
   hrimport:
     enabled: true         # true: 每分鐘會跑 ; false: 完全停用
     cron: "0 * * * * *"   # 每分鐘一次
-    localPath: "/home/ai3/HrImportFile/input"
-    localArchivePath: "/home/ai3/HrImportFile/archive"
+    localPath: "c:\\csv\\input"
+    localArchivePath: "c:\\csv\\archive"
     # 本機要處理的 CSV 檔名（只處理此檔案）
     filename: HrImport.csv
